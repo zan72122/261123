@@ -51,7 +51,7 @@ const stubPlugin = {
 
 const res = await esbuild.build({
   entryPoints: [path.join(SRC, 'main.js')],
-  bundle: true, format: 'iife', write: false, minify: !dev, target: ['safari14', 'chrome90'],
+  bundle: true, format: 'iife', write: false, minify: !dev, target: ['safari14.1', 'chrome90'],
   alias: { three: path.join(SRC, 'vendor/three.module.min.js') },
   define: { __DEV__: dev ? 'true' : 'false', __DEV_MODULES__: JSON.stringify(real) },
   plugins: [stubPlugin], logLevel: 'warning', legalComments: 'none',
