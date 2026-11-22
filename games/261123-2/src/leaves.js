@@ -227,7 +227,7 @@ reflectedLight.indirectDiffuse += diffuseColor.rgb * uGlow * vec3(1.0,0.8,0.55);
     makeCurl(lCurlA.array, i * 3, cell);
     const cu = lCurlA.array;
     lcup[i] = 0.25 * (Math.abs(cu[i * 3]) + Math.abs(cu[i * 3 + 1]) + Math.abs(cu[i * 3 + 2]));
-    ls[i] = rnd(0.11, 0.17);
+    ls[i] = 0.17 - Math.pow(Math.random(), 1.6) * 0.05;
     attrDirty = true;
   }
   function placeRest(i, x, z) {
@@ -265,7 +265,7 @@ reflectedLight.indirectDiffuse += diffuseColor.rgb * uGlow * vec3(1.0,0.8,0.55);
   const moundIdx = [];
   for (let j = 0; j < NR - 1; j++) for (let i = 0; i < SEG; i++) {
     const i1 = (i + 1) % SEG, a = j * SEG + i, b = j * SEG + i1, c = (j + 1) * SEG + i, d = (j + 1) * SEG + i1;
-    moundIdx.push(a, c, b, b, c, d);
+    moundIdx.push(a, b, c, b, d, c);
   }
   const moundGeo = new THREE.BufferGeometry();
   moundGeo.setAttribute('position', new THREE.BufferAttribute(moundPos, 3).setUsage(THREE.DynamicDrawUsage));
@@ -511,7 +511,7 @@ roughnessFactor = mix(roughnessFactor, 0.98, max(bChar*0.6, bAsh));`)
     let best = 0, bestErr = 1e9;
     for (let p = -0.4; p <= 0.6; p += 0.002) {
       const others = lowestYExcludingEnd(p, 0.06);
-      const err = Math.abs((poleEndY(p, 0.06) - 0.012) - (others));
+      const err = Math.abs(poleEndY(p, 0.06) - others);
       if (err < bestErr) { bestErr = err; best = p; }
     }
     FLAT_PITCH = best;
@@ -633,10 +633,11 @@ roughnessFactor = mix(roughnessFactor, 0.98, max(bChar*0.6, bAsh));`)
     mound.visible = landed > 0 || burnK > 0;
     seatAll();
   }
-  let dropCb = null, dropCbT = -1, dropLeafIdx = -1;
+  const dropCbs = new Array(LCAP).fill(null);   // callback per falling DROPTOP leaf
+  const pendingCbs = [];                          // [{t, cb}] fire after the tiny bounce
   function clearFlights() {
     for (let i = 0; i < LCAP; i++) if (lmode[i] >= FALL) { freeLeaf(i); }
-    dropCb = null; dropCbT = -1; dropLeafIdx = -1;
+    dropCbs.fill(null); pendingCbs.length = 0;
   }
 
   function reset(opts) {
@@ -649,9 +650,9 @@ roughnessFactor = mix(roughnessFactor, 0.98, max(bChar*0.6, bAsh));`)
       clearFlights();
       if (opts.keepPile) {
         const n = opts.count !== undefined ? Math.min(LCAP, count) : 0;
+        const keepAc = acornsInPile;
         scatter(n);
-        for (let k = 0; k < ACN; k++) { /* keep acorns in pile hidden */ }
-        if (acornsInPileKeep > 0) restoreAcornsInPile(acornsInPileKeep);
+        if (keepAc > 0) restoreAcornsInPile(keepAc);
         snapShape();
         return;
       }
@@ -666,7 +667,6 @@ roughnessFactor = mix(roughnessFactor, 0.98, max(bChar*0.6, bAsh));`)
       snapShape();
     } catch (e) { if (G.dev) console.warn('leaves.reset', e); }
   }
-  let acornsInPileKeep = 0;
   function restoreAcornsInPile(n) {
     acornsInPile = 0;
     for (let k = 0; k < ACN && acornsInPile < n; k++) { acorns[k].mode = 3; acorns[k].root.visible = false; acornsInPile++; }
@@ -715,10 +715,9 @@ roughnessFactor = mix(roughnessFactor, 0.98, max(bChar*0.6, bAsh));`)
         rk.active = true;
         const tx = sw.px, tz = sw.pz - 0.10;
         const d = Math.hypot(tx - rk.x, tz - rk.z);
-        if (d > 0.04) { rk.fly = 0; rk.fx = rk.x; rk.fz = rk.z; rk.fyaw = rk.yaw; }
+        if (d > 0.04) { rk.fly = 0; rk.fx = rk.x; rk.fz = rk.z; rk.fyaw = rk.yaw; if (d > 0.3) audio('tok'); }
         else rk.fly = -1;
         rk.pv -= 2.2; // pressing bob
-        audio('tok');
       } else if (!a && rk.active) {
         rk.active = false; rk.fly = -1;
         rk.rv += (Math.random() < 0.5 ? -1 : 1) * 0.6;
@@ -741,9 +740,9 @@ roughnessFactor = mix(roughnessFactor, 0.98, max(bChar*0.6, bAsh));`)
 
   function dropLeafOnPile(cb) {
     try {
+      const fn = typeof cb === 'function' ? cb : null;
       const i = allocLeaf();
-      if (dropLeafIdx >= 0 && lmode[dropLeafIdx] === DROPTOP) { /* one already falling: chain to it */ }
-      if (i < 0) { dropCb = typeof cb === 'function' ? cb : null; dropCbT = 2.4; return; }
+      if (i < 0) { if (fn) pendingCbs.push({ t: 2.4, cb: fn }); return; }
       initLeafLook(i, Math.random() < 0.5 ? 0 : 5);
       const cy = Math.max(1.5, canopy.c.y || 3.2);
       lx[i] = rnd(-0.35, 0.35); lz[i] = rnd(-0.35, 0.2); ly[i] = cy;
@@ -751,8 +750,7 @@ roughnessFactor = mix(roughnessFactor, 0.98, max(bChar*0.6, bAsh));`)
       fT[i] = 0; fDel[i] = 0; fDur[i] = 2.2; fOm[i] = rnd(2.6, 3.4); fPh[i] = rnd(0, TAU);
       const a = rnd(0, TAU); fSdx[i] = Math.cos(a); fSdz[i] = Math.sin(a); fSw[i] = rnd(0.16, 0.24);
       lyaw[i] = rnd(0, TAU); lpit[i] = 0; lrol[i] = 0; lspin[i] = rnd(-0.8, 0.8);
-      lmode[i] = DROPTOP; dropLeafIdx = i;
-      dropCb = typeof cb === 'function' ? cb : null; dropCbT = -1;
+      lmode[i] = DROPTOP; dropCbs[i] = fn;
       writeLeaf(i);
     } catch (e) { /* */ }
   }
@@ -861,7 +859,7 @@ roughnessFactor = mix(roughnessFactor, 0.98, max(bChar*0.6, bAsh));`)
   }
 
   // ---------------------------------------------------------------- update
-  let clock = 0, lastShadow = shadowsOn(), patT = 0, rustT = 0;
+  let clock = 0, lastShadow = shadowsOn(), patT = 0;
   function update(dt) {
     try {
       dt = clamp(fin(dt, 0.016), 0, 0.05);
@@ -869,14 +867,17 @@ roughnessFactor = mix(roughnessFactor, 0.98, max(bChar*0.6, bAsh));`)
       moundU.uTime.value = clock;
       const sh = shadowsOn();
       if (sh !== lastShadow) { lastShadow = sh; loose.castShadow = pileLeaves.castShadow = mound.castShadow = sh; for (const a of acorns) a.nut.castShadow = a.cap.castShadow = sh; }
-      patT -= dt; rustT -= dt;
+      patT -= dt;
       updateRake(dt);
       updateLoose(dt);
       updateAcorns(dt);
       updatePile(dt);
       if (looseDirty) { loose.instanceMatrix.needsUpdate = true; looseDirty = false; }
       if (attrDirty) { lCellA.needsUpdate = lTintA.needsUpdate = lCurlA.needsUpdate = true; attrDirty = false; }
-      if (dropCbT > 0) { dropCbT -= dt; if (dropCbT <= 0) { dropCbT = -1; const cb = dropCb; dropCb = null; if (cb) { try { cb(); } catch (e) { if (G.dev) console.warn(e); } } } }
+      for (let k = pendingCbs.length - 1; k >= 0; k--) {
+        const pc = pendingCbs[k]; pc.t -= dt;
+        if (pc.t <= 0) { pendingCbs.splice(k, 1); try { pc.cb(); } catch (e) { if (G.dev) console.warn(e); } }
+      }
     } catch (e) { if (G.dev) console.warn('leaves.update', e); }
   }
 
@@ -1085,15 +1086,16 @@ roughnessFactor = mix(roughnessFactor, 0.98, max(bChar*0.6, bAsh));`)
         if (u >= 1) {
           const slot = reserveSlot(true);
           landInSlot(i, slot, true);
-          freeLeaf(i); dropLeafIdx = -1;
+          const fn = dropCbs[i]; dropCbs[i] = null;
+          freeLeaf(i);
           audio('pat');
-          dropCbT = 0.3; // tiny bounce, then the callback
+          if (fn) pendingCbs.push({ t: 0.3, cb: fn }); // tiny bounce, then the callback
           continue;
         }
         writeLeaf(i);
       }
     }
-    if (moved > 0 && rustT <= 0) { audio('rustle', clamp(moved * hs * 0.035 + 0.1, 0, 1)); }
+    if (moved > 0) { audio('rustle', clamp(moved * hs * 0.035 + 0.1, 0, 1)); }
     if (pushing && mound.visible && Math.hypot(rk.x, rk.z) < curR * 0.95 && Math.random() < dt * 3) {
       for (let i = 0; i < PCAP; i++) if (sVis[i] && sHopD[i] < 0 && Math.random() < 0.08) { sHopD[i] = 0; sHopV[i] = rnd(0.15, 0.35); }
       audio('rustle', 0.4);
@@ -1132,8 +1134,7 @@ roughnessFactor = mix(roughnessFactor, 0.98, max(bChar*0.6, bAsh));`)
             if (d < SHELF_R && d > 1e-4) { a.x = shelf[k].x + dx / d * SHELF_R; a.z = shelf[k].z + dz / d * SHELF_R; a.vx *= 0.3; a.vz *= 0.3; }
           }
           if (sp < 0.01) { a.mode = 0; a.vx = a.vz = 0; }
-          if (a.x * a.x + a.z * a.z < ABSORB_R * ABSORB_R && !a.burnt) { hopAcornIn(a); }
-          else if (a.x * a.x + a.z * a.z < ABSORB_R * ABSORB_R && a.burnt) { hopAcornIn(a); }
+          if (a.x * a.x + a.z * a.z < ABSORB_R * ABSORB_R) hopAcornIn(a);
           if (!isFinite(a.x) || !isFinite(a.z)) { const s = randomSpot(0.9); placeAcorn(a, s.x, s.z); }
           poseAcorn(a);
         }

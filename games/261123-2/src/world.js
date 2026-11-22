@@ -138,7 +138,7 @@ export function create(G) {
     // sRGB
     bg: [[0.70, 0.76, 0.82], [0.80, 0.72, 0.60], [0.84, 0.62, 0.52]],
     fog: [[0.47, 0.43, 0.37], [0.50, 0.42, 0.33], [0.50, 0.38, 0.32]],
-    wall: [[0.98, 0.97, 0.94], [0.98, 0.84, 0.66], [0.88, 0.66, 0.54]],
+    wall: [[0.98, 0.97, 0.94], [0.96, 0.80, 0.62], [0.82, 0.58, 0.47]],
   };
   const tmpC = new THREE.Color();
   function keyNum(arr, k) { return k < 0.5 ? lerp(arr[0], arr[1], k * 2) : lerp(arr[1], arr[2], (k - 0.5) * 2); }
@@ -310,10 +310,10 @@ export function create(G) {
         clump--;
         x = cx + (rnd() - 0.5) * 0.7; z = cz + (rnd() - 0.5) * 0.5;
       } else {
-      const pick = rnd();
-      if (pick < 0.30) { const a = rnd() * Math.PI * 2, r = 0.45 + Math.pow(rnd(), 1.5) * 2.2; x = -1.55 + Math.cos(a) * r; z = -2.3 + Math.sin(a) * r; }
-      else if (pick < 0.55) { x = (rnd() * 2 - 1) * 7.5; z = -7.5 + Math.pow(rnd(), 1.6) * 1.6; }
-      else { x = (rnd() * 2 - 1) * 6.5; z = -7.8 + rnd() * 10; }
+        const pick = rnd();
+        if (pick < 0.30) { const a = rnd() * Math.PI * 2, r = 0.45 + Math.pow(rnd(), 1.5) * 2.2; x = -1.55 + Math.cos(a) * r; z = -2.3 + Math.sin(a) * r; }
+        else if (pick < 0.55) { x = (rnd() * 2 - 1) * 7.5; z = -7.5 + Math.pow(rnd(), 1.6) * 1.6; }
+        else { x = (rnd() * 2 - 1) * 6.5; z = -7.8 + rnd() * 10; }
         if (rnd() < 0.45) { cx = x; cz = z; clump = 2 + Math.floor(rnd() * 6); }
       }
       const ex = x / 1.30, ez = (z - 0.05) / 1.45;
@@ -524,7 +524,7 @@ export function create(G) {
       [-1, 0, 0, 2.4, 14, 0, true, true],
       [-1, 0, 0, 2.2, 10, 0, false, true],
     ];
-    // [ground point the dapple should fall on (x,z), height, yaw deg] — caster = point − h·(sun xz / sun y)
+    // [ground point the dapple should fall on (x,z), height, yaw deg] — caster = point + h·(sun xz / sun y)
     const SHADOW_ONLY = [[-0.35, -0.25, 5.0, 25], [0.75, 0.45, 5.3, 60], [-0.95, 0.85, 4.8, -10]];
     let so = 0;
     const rnd = mulberry(321);
@@ -538,7 +538,7 @@ export function create(G) {
         const a = THREE.MathUtils.degToRad(p[3]);
         dirX = Math.cos(a); dirZ = Math.sin(a);
         const k = p[2] / sunDir.y;
-        pivot.position.set(p[0] - sunDir.x * k - dirX * L * 0.5, p[2], p[1] - sunDir.z * k - dirZ * L * 0.5);
+        pivot.position.set(p[0] + sunDir.x * k - dirX * L * 0.5, p[2], p[1] + sunDir.z * k - dirZ * L * 0.5);
       } else {
         const l = limbs[li];
         tmpV.copy(l.p0).lerp(l.p1, t);

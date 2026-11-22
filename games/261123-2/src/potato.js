@@ -52,10 +52,35 @@ export function create(G) {
   const skinTex = texRep('potato_skin', 2, 1), skinN = nrm(skinTex, 1.6);
   const roastTex = texRep('potato_roast', 2, 1), roastN = nrm(roastTex, 3.5);
 
+  // skin detail shared by raw + roasted skin: darker ends, longitudinal streaks, little root-eye scars
+  const SKIN_FS = (fs) => fs
+    .replace('#include <common>', `#include <common>
+      float pHash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }`)
+    .replace('#include <map_fragment>', `#include <map_fragment>
+      #ifdef USE_MAP
+      {
+        vec2 su = vMapUv;
+        float ends = smoothstep(0.0, 0.16, su.y) * smoothstep(1.0, 0.8, su.y);
+        diffuseColor.rgb *= mix(vec3(0.62, 0.52, 0.5), vec3(1.0), ends);
+        float st = sin(su.x * 6.2832 * 3.0 + sin(su.y * 9.0) * 1.3) * 0.5 + 0.5;
+        diffuseColor.rgb *= 0.9 + 0.12 * st;
+        vec2 g = vec2(su.x * 5.0, su.y * 11.0);
+        vec2 cell = floor(g); vec2 fp = fract(g) - 0.5;
+        float h = pHash(cell);
+        if (h > 0.72) {
+          vec2 o = vec2(pHash(cell + 3.1), pHash(cell + 7.7)) - 0.5;
+          vec2 d = (fp - o * 0.5) * vec2(1.0, 2.6);
+          float eye = 1.0 - smoothstep(0.05, 0.14, length(d));
+          diffuseColor.rgb *= 1.0 - 0.5 * eye;
+        }
+      }
+      #endif`);
   function makeRawMat() {
-    const m = new THREE.MeshStandardMaterial({ map: skinTex, normalMap: skinN, roughness: 0.52, metalness: 0 });
+    const m = new THREE.MeshStandardMaterial({ map: skinTex, normalMap: skinN, roughness: 0.58, metalness: 0 });
     if (!skinTex) m.color.setRGB(0.42, 0.1, 0.18);
-    if (skinN) m.normalScale.set(0.35, 0.35);
+    if (skinN) m.normalScale.set(0.75, 0.75);
+    m.onBeforeCompile = (sh) => { sh.fragmentShader = SKIN_FS(sh.fragmentShader); };
+    m.customProgramCacheKey = () => 'potato-raw';
     return m;
   }
   const DUST_VS = (vs) => vs
@@ -78,7 +103,7 @@ export function create(G) {
     if (roastN) m.normalScale.set(1.1, 1.1);
     const u = { uDust: { value: 0 } };
     m.userData.u = u;
-    m.onBeforeCompile = (sh) => { sh.uniforms.uDust = u.uDust; sh.vertexShader = DUST_VS(sh.vertexShader); sh.fragmentShader = DUST_FS(sh.fragmentShader); };
+    m.onBeforeCompile = (sh) => { sh.uniforms.uDust = u.uDust; sh.vertexShader = DUST_VS(sh.vertexShader); sh.fragmentShader = DUST_FS(SKIN_FS(sh.fragmentShader)); };
     m.customProgramCacheKey = () => 'potato-roast-dust';
     return m;
   }
@@ -132,7 +157,7 @@ export function create(G) {
     const phi = r() * TAU;
     const bdir = new V3(0, Math.cos(phi), Math.sin(phi));
     const sag = L * bend / 8 * 4;
-    const kS = lerp(0.85, 1.15, r()), pH = lerp(0.55, 0.68, r()), pT = lerp(0.95, 1.2, r());
+    const kS = lerp(0.85, 1.15, r()), pH = lerp(0.42, 0.52, r()), pT = lerp(0.62, 0.8, r());
     const ell = lerp(0.05, 0.12, r()), ellA = r() * PI, gph = r() * TAU, gA = lerp(0.012, 0.03, r());
     const lumps = []; const nl = 2 + (r() < 0.6 ? 1 : 0);
     for (let k = 0; k < nl; k++) lumps.push({ t: lerp(0.18, 0.82, r()), th: r() * TAU, a: (r() < 0.5 ? -1 : 1) * lerp(0.05, 0.12, r()), wt: lerp(0.1, 0.22, r()), wa: lerp(0.6, 1.2, r()) });
@@ -385,7 +410,7 @@ export function create(G) {
         let y = 0.0035 * Math.sin(PI * u) - KINK * smooth(0.8, 0.96, u);
         if (u > 0.91) y += 0.0006 * Math.sin((u - 0.91) / 0.09 * PI * 7);
         let w = 0.014 + 0.0035 * smooth(0.78, 0.9, u);
-        if (u > 0.965) w *= Math.max(0.45, Math.sqrt(1 - Math.pow((u - 0.965) / 0.035, 2)));
+        if (u > 0.965) w *= Math.max(0.45, Math.sqrt(Math.max(0, 1 - Math.pow((u - 0.965) / 0.035, 2))));
         pts.push([sg * y, -u * LS, w, TH]);
       }
       return pts;
@@ -647,7 +672,7 @@ export function create(G) {
         const seed = (r() * 4294967295) >>> 0;
         pots.push(makePotato(k, seed, k === big ? 1.5 : 1, vars[k]));
         const c = rawMats[k].color;
-        if (skinTex) c.setRGB(0.6 + r() * 0.08, 0.34 + r() * 0.06, 0.44 + r() * 0.06);
+        if (skinTex) c.setRGB(0.44 + r() * 0.06, 0.17 + r() * 0.04, 0.23 + r() * 0.05);
         roastMats[k].userData.u.uDust.value = 0;
       }
       layoutBasket(r); layoutZaru(r); layoutAsh(r);
