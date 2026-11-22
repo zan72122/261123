@@ -1110,7 +1110,15 @@
     try { P.update(dt); } catch (err) { report(err); }
     if (!ctxLost) {
       try { renderFrame(); } catch (err) { report(err); }
+      if (!shown) reveal();
     }
+  }
+  // the canvas fades in over the page background once the first frame is drawn
+  var shown = false;
+  function reveal() {
+    shown = true;
+    var cv = E.canvas;
+    if (cv && cv.classList) requestAnimationFrame(function () { cv.classList.add('on'); });
   }
   function start() {
     if (running) return;

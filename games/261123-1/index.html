@@ -43,7 +43,10 @@ body {
   -webkit-user-select: none;
   user-select: none;
   -webkit-tap-highlight-color: transparent;
+  opacity: 0;
+  transition: opacity 0.35s ease-out;
 }
+#c.on { opacity: 1; }
 #fallback {
   position: fixed;
   inset: 0;
@@ -1184,7 +1187,15 @@ body {
     try { P.update(dt); } catch (err) { report(err); }
     if (!ctxLost) {
       try { renderFrame(); } catch (err) { report(err); }
+      if (!shown) reveal();
     }
+  }
+  // the canvas fades in over the page background once the first frame is drawn
+  var shown = false;
+  function reveal() {
+    shown = true;
+    var cv = E.canvas;
+    if (cv && cv.classList) requestAnimationFrame(function () { cv.classList.add('on'); });
   }
   function start() {
     if (running) return;
@@ -2456,9 +2467,11 @@ body {
   function cached(key, fn) { if (!CACHE[key]) CACHE[key] = fn(); return CACHE[key]; }
 
   function grain(ctx, W, H, amt, seed) {
-    var r = rng(seed || 7), img = ctx.getImageData(0, 0, W, H), d = img.data;
-    for (var i = 0; i < d.length; i += 4) {
-      var n = (r() - 0.5) * amt;
+    // same sequence as rng(seed || 7), inlined (hot loop at start-up)
+    var s = ((seed || 7) >>> 0) || 1, img = ctx.getImageData(0, 0, W, H), d = img.data, len = d.length;
+    for (var i = 0; i < len; i += 4) {
+      s = (Math.imul(s, 1664525) + 1013904223) >>> 0;
+      var n = (s / 4294967296 - 0.5) * amt;
       d[i] += n; d[i + 1] += n; d[i + 2] += n;
     }
     ctx.putImageData(img, 0, 0);

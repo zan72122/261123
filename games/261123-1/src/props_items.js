@@ -31,9 +31,11 @@
   function cached(key, fn) { if (!CACHE[key]) CACHE[key] = fn(); return CACHE[key]; }
 
   function grain(ctx, W, H, amt, seed) {
-    var r = rng(seed || 7), img = ctx.getImageData(0, 0, W, H), d = img.data;
-    for (var i = 0; i < d.length; i += 4) {
-      var n = (r() - 0.5) * amt;
+    // same sequence as rng(seed || 7), inlined (hot loop at start-up)
+    var s = ((seed || 7) >>> 0) || 1, img = ctx.getImageData(0, 0, W, H), d = img.data, len = d.length;
+    for (var i = 0; i < len; i += 4) {
+      s = (Math.imul(s, 1664525) + 1013904223) >>> 0;
+      var n = (s / 4294967296 - 0.5) * amt;
       d[i] += n; d[i + 1] += n; d[i + 2] += n;
     }
     ctx.putImageData(img, 0, 0);
