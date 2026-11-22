@@ -14,7 +14,7 @@ const DEV = typeof __DEV__ !== 'undefined' && __DEV__;
 function showFallback() {
   try {
     const img = document.getElementById('fallback');
-    if (img) img.style.display = 'block';
+    if (img) { if (!img.getAttribute('src') && img.dataset.src) img.src = img.dataset.src; img.style.display = 'block'; } // only decoded when needed
     const c = document.getElementById('gl');
     if (c) c.style.display = 'none';
   } catch (e) { /* ignore */ }
