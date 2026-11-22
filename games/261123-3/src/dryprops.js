@@ -2,7 +2,10 @@
 // straight pinch hanger with three spring clothespins (洗濯ばさみ).
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
+import { mergeVertices } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { L } from './layout.js';
+// smooth-shade an extrusion's sides (caps stay split by their UVs)
+function smoothX(g) { const m = mergeVertices(g, 1e-5); m.computeVertexNormals(); g.dispose(); return m; }
 
 const TAU = Math.PI * 2;
 const V = (x, y) => new THREE.Vector2(x, y);
@@ -72,7 +75,7 @@ function textures() {
   TX.fly = canvasTex(512, 256, (g, w, h) => {
     const r = rng(31);
     for (let i = 0; i < 150; i++) {
-      const x = r() * w, y = r() * h, len = 10 + r() * 60, th = 1 + r() * 2.5;
+      const x = r() * w, y = r() * h, len = 14 + r() * 70, th = 0.7 + r() * 1.4;
       const gr = g.createLinearGradient(x, 0, x + len, 0);
       gr.addColorStop(0, 'rgba(255,255,255,0)'); gr.addColorStop(0.8, 'rgba(235,245,255,0.55)'); gr.addColorStop(1, 'rgba(255,255,255,0.9)');
       g.fillStyle = gr; g.beginPath(); g.ellipse(x + len / 2, y, len / 2, th, 0, 0, TAU); g.fill();
@@ -140,7 +143,7 @@ function stainless(rough = 0.24) {
 // Clear plastic: plain transparency, alpha raised at grazing angles and where reflections are bright.
 function clearMat(color, opacity, side, edge = 0.55) {
   const m = new THREE.MeshPhysicalMaterial({
-    color, transparent: true, opacity, roughness: 0.05, metalness: 0, clearcoat: 1, clearcoatRoughness: 0.03,
+    color, transparent: true, opacity, roughness: 0.09, metalness: 0, clearcoat: 1, clearcoatRoughness: 0.03,
     envMapIntensity: 2.4, depthWrite: false, side, ior: 1.58,
   });
   m.onBeforeCompile = (sh) => {
@@ -158,7 +161,8 @@ function clearMat(color, opacity, side, edge = 0.55) {
 function waterMat(opacity, map = null, color = 0xe2ecf1) {
   return new THREE.MeshStandardMaterial({ color, map, transparent: true, opacity, roughness: 0.04, metalness: 0, envMapIntensity: 2.6, depthWrite: false });
 }
-function lathe(pts, seg = 64) { return new THREE.LatheGeometry(pts.map(p => V(p[0], p[1])), seg); }
+// Profiles are written top/inside first; reversed so LatheGeometry's normals and winding face outward.
+function lathe(pts, seg = 64, keep = false) { const v = pts.map(p => V(p[0], p[1])); if (!keep) v.reverse(); return new THREE.LatheGeometry(v, seg); }
 function mesh(geo, mat, cast = true, recv = true) { const m = new THREE.Mesh(geo, mat); m.castShadow = cast; m.receiveShadow = recv; return m; }
 function tube(points, r, segs = 48, radial = 8, closed = false) {
   return new THREE.TubeGeometry(new THREE.CatmullRomCurve3(points.map(p => new THREE.Vector3(...p)), closed, 'catmullrom', 0.5), segs, r, radial, closed);
@@ -201,7 +205,7 @@ export function createSpinner(ctx) {
   const SPOUT_TILT = 0.2;
   const spout = new THREE.Group(); spout.position.set(0, 0.048, 0.168); spout.rotation.x = SPOUT_TILT; body.add(spout);
   const spoutLen = 0.052;
-  const spOuter = mesh(lathe([[0.0125, 0], [0.0118, 0.01], [0.0108, spoutLen - 0.004], [0.0112, spoutLen - 0.0015], [0.0102, spoutLen], [0.0078, spoutLen], [0.0074, spoutLen - 0.003], [0.0074, 0.0]], 32), whiteD);
+  const spOuter = mesh(lathe([[0.0125, 0], [0.0118, 0.01], [0.0108, spoutLen - 0.004], [0.0112, spoutLen - 0.0015], [0.0102, spoutLen], [0.0078, spoutLen], [0.0074, spoutLen - 0.003], [0.0074, 0.0]], 32, true), whiteD);
   spOuter.rotation.x = Math.PI / 2; spout.add(spOuter);
   const spIn = mesh(new THREE.CircleGeometry(0.0075, 24), new THREE.MeshStandardMaterial({ color: 0x2a2a28, roughness: 0.7 }), false, false);
   spIn.position.z = 0.012; spout.add(spIn);
@@ -210,12 +214,12 @@ export function createSpinner(ctx) {
 
   // ---- clear tub ----
   const tubProf = [[0.0, TUB_Y0], [0.14, TUB_Y0], [0.148, TUB_Y0 + 0.003], [0.1515, TUB_Y0 + 0.010]];
-  for (let y = TUB_Y0 + 0.018; y <= TUB_TOP - 0.012; y += 0.006) {
-    const r = 0.1525 + (y - TUB_Y0) / (TUB_TOP - TUB_Y0) * 0.0035 + 0.0016 * Math.exp(-(((y - 0.15) / 0.004) ** 2)) + 0.0016 * Math.exp(-(((y - 0.268) / 0.004) ** 2));
+  for (let y = TUB_Y0 + 0.018; y <= TUB_TOP - 0.012; y += 0.003) {
+    const r = 0.1525 + (y - TUB_Y0) / (TUB_TOP - TUB_Y0) * 0.0035 + 0.0026 * Math.exp(-(((y - 0.15) / 0.0035) ** 2)) + 0.0026 * Math.exp(-(((y - 0.268) / 0.0035) ** 2));
     tubProf.push([r, y]);
   }
   tubProf.push([0.1565, TUB_TOP - 0.006], [0.158, TUB_TOP - 0.002], [0.16, TUB_TOP]);
-  const tubGeo = lathe(tubProf, 96);
+  const tubGeo = lathe(tubProf, 96, true);
   const tint = 0xbcc6ca;
   const tubBack = mesh(tubGeo, clearMat(tint, 0.15, THREE.BackSide, 0.45), false, false); tubBack.renderOrder = 1;
   const tubFront = mesh(tubGeo, clearMat(tint, 0.15, THREE.FrontSide, 0.9), false, false); tubFront.renderOrder = 7;
@@ -291,7 +295,7 @@ export function createSpinner(ctx) {
   const stream = mesh(streamGeo, waterMat(0.72, null, 0xe6eef2), false, false); stream.frustumCulled = false; stream.renderOrder = 9; body.add(stream);
   const splash = mesh(new THREE.PlaneGeometry(0.06, 0.06), waterMat(0, T.splash, 0xf2f7fa), false, false);
   splash.rotation.x = -Math.PI / 2; splash.renderOrder = 9; body.add(splash);
-  const wetSpot = mesh(new THREE.PlaneGeometry(0.16, 0.16), new THREE.MeshStandardMaterial({ color: 0x1a1814, map: T.wet, transparent: true, opacity: 0, depthWrite: false, roughness: 0.2, polygonOffset: true, polygonOffsetFactor: -2 }), false, false);
+  const wetSpot = mesh(new THREE.PlaneGeometry(0.11, 0.11), new THREE.MeshStandardMaterial({ color: 0x1a1814, map: T.wet, transparent: true, opacity: 0, depthWrite: false, roughness: 0.2, polygonOffset: true, polygonOffsetFactor: -2 }), false, false);
   wetSpot.material.map.colorSpace = THREE.SRGBColorSpace;
   wetSpot.rotation.x = -Math.PI / 2; wetSpot.position.y = 0.0015; body.add(wetSpot);
   // stream centre line (local to body)
@@ -329,7 +333,7 @@ export function createSpinner(ctx) {
     sh.bezierCurveTo(0.1, 0.021, 0.07, 0.03, 0.04, 0.031); sh.lineTo(-0.04, 0.031); sh.bezierCurveTo(-0.07, 0.03, -0.1, 0.021, -0.15, 0.021);
     sh.quadraticCurveTo(-0.158, 0.021, -0.158, 0.016); sh.quadraticCurveTo(-0.158, 0.011, -0.152, 0.011);
     const bg = new THREE.ExtrudeGeometry(sh, { depth: 0.034, bevelEnabled: true, bevelThickness: 0.004, bevelSize: 0.0025, bevelSegments: 3, curveSegments: 16 });
-    bg.translate(0, 0, -0.017); lid.add(mesh(bg, white));
+    bg.translate(0, 0, -0.017); lid.add(mesh(smoothX(bg), white));
   }
   lid.add(mesh(lathe([[0, 0.0338], [0.024, 0.0338], [0.0285, 0.0332], [0.0315, 0.031], [0.0325, 0.028], [0.0325, 0.016]], 48), white));
   // gear visible through the dome
@@ -354,13 +358,13 @@ export function createSpinner(ctx) {
     sh.lineTo(Lr, -r1); sh.absarc(Lr, 0, r1, -Math.PI / 2, Math.PI / 2, false); sh.lineTo(0, r0);
     const ag = new THREE.ExtrudeGeometry(sh, { depth: 0.008, bevelEnabled: true, bevelThickness: 0.0018, bevelSize: 0.0018, bevelSegments: 3, curveSegments: 24 });
     ag.translate(0, 0, -0.004); ag.rotateX(-Math.PI / 2);
-    arm.add(mesh(ag, white));
+    arm.add(mesh(smoothX(ag), white));
   }
   const capH = mesh(lathe([[0, 0.0105], [0.009, 0.0105], [0.0125, 0.009], [0.0135, 0.0065], [0.0135, 0.0058]], 32), orange); arm.add(capH);
   const knob = new THREE.Object3D(); knob.name = 'crankKnob'; knob.position.set(CRANK_R, 0.0058 + 0.024, 0); arm.add(knob);
   {
     const kp = [[0, -0.024], [0.0125, -0.024], [0.0155, -0.0225], [0.017, -0.019], [0.0195, -0.016], [0.0208, -0.01], [0.021, 0.006], [0.0205, 0.014], [0.0192, 0.019], [0.0165, 0.0225], [0.011, 0.0245], [0, 0.025]];
-    const kg = lathe(kp, 48);
+    const kg = lathe(kp, 48, true);
     // shallow vertical grip flutes
     const pa = kg.attributes.position;
     for (let i = 0; i < pa.count; i++) { const x = pa.getX(i), y = pa.getY(i), z = pa.getZ(i); const r = Math.hypot(x, z); if (r < 0.019 || y > 0.016 || y < -0.017) continue; const a = Math.atan2(z, x); const f = 1 - 0.035 * Math.max(0, Math.cos(a * 16)) ** 4; pa.setX(i, x * f); pa.setZ(i, z * f); }
@@ -412,14 +416,14 @@ export function createSpinner(ctx) {
     // water on the wall
     const dir = Math.sign(omega) || 1;
     const flyA = water * smooth(3, 14, sp);
-    flyB.material.opacity = flyF.material.opacity = flyA * 0.9;
+    flyB.material.opacity = flyF.material.opacity = flyA * 0.6;
     flyB.visible = flyF.visible = flyA > 0.003;
     flyB.rotation.y = flyF.rotation.y = flyB.rotation.y + dir * Math.min(sp, 30) * 0.55 * dt;
     runB.material.opacity = runF.material.opacity = water * 0.85;
     runB.visible = runF.visible = water > 0.003;
     T.run.offset.y = (T.run.offset.y + dt * 0.12) % 1; runTexF.offset.y = (runTexF.offset.y + dt * 0.12) % 1; runTexF.offset.x = 0.37;
     runB.rotation.y = runF.rotation.y = runB.rotation.y + dir * Math.min(sp, 30) * 0.04 * dt;
-    const depth = 0.004 + 0.016 * water;
+    const depth = 0.012 + 0.018 * water;
     puddle.visible = meniscus.visible = water > 0.003;
     puddle.position.y = TUB_Y0 + depth; puddle.material.opacity = 0.55 * smooth(0, 0.2, water);
     puddle.rotation.z += dir * Math.min(sp, 30) * 0.15 * dt;
@@ -483,13 +487,13 @@ function makeHookGeo() {
   sh.quadraticCurveTo(-0.028, 0.05, -0.028, 0.03); sh.lineTo(-0.028, 0);
   const g = new THREE.ExtrudeGeometry(sh, { depth: 0.026, bevelEnabled: true, bevelThickness: 0.002, bevelSize: 0.0015, bevelSegments: 2, curveSegments: 20 });
   g.translate(0, 0, -0.013);
-  return g;
+  return smoothX(g);
 }
 export function createPole(ctx) {
   const T = textures();
   const group = new THREE.Group(); group.name = 'laundryPole';
   const P = L.POLE; const R = 0.015;
-  const steel = stainless(0.22);
+  const steel = stainless(0.3);
   const len = P.maxZ - P.minZ;
   const poleGeo = new THREE.CylinderGeometry(R, R, len - 0.06, 48, 1, true); poleGeo.rotateX(Math.PI / 2);
   const pole = mesh(poleGeo, steel); pole.position.set(P.x, P.y, (P.minZ + P.maxZ) / 2); group.add(pole);
@@ -535,7 +539,8 @@ const PEG_OUT = [[-0.0012, 0], [-0.0032, 0.003], [-0.0045, 0.010], [-0.0062, 0.0
 const PEG_IN = [[-0.0062, 0.075], [-0.0049, 0.073], [-0.0041, 0.060], [-0.0029, 0.048], [-0.0016, 0.0405], [-0.0031, 0.0375], [-0.0039, 0.033], [-0.0031, 0.0285], [-0.0014, 0.0265], [-0.0007, 0.020],
   [-0.0002, 0.0165], [-0.0009, 0.014], [-0.0002, 0.0115], [-0.0009, 0.009], [-0.0002, 0.0065], [-0.0009, 0.004], [-0.0002, 0.0015]];
 function pegHalfGeo(mirror) {
-  const pts = PEG_OUT.concat(PEG_IN).map(p => V(mirror ? -p[0] : p[0], p[1]));
+  const outer = new THREE.SplineCurve(PEG_OUT.map(p => V(p[0], p[1]))).getPoints(48).map(p => [p.x, p.y]);
+  const pts = outer.concat(PEG_IN.slice(1)).map(p => V(mirror ? -p[0] : p[0], p[1]));
   if (mirror) pts.reverse();
   const sh = new THREE.Shape(pts);
   const g = new THREE.ExtrudeGeometry(sh, { depth: 0.012, bevelEnabled: true, bevelThickness: 0.0012, bevelSize: 0.0007, bevelSegments: 3, curveSegments: 6 });
@@ -546,8 +551,7 @@ function pegHalfGeo(mirror) {
     if (y > 0.068) { const t = (y - 0.068) / 0.0085; w *= Math.sqrt(Math.max(0.05, 1 - t * t * 0.75)); }
     pa.setZ(i, pa.getZ(i) * w);
   }
-  g.computeVertexNormals();
-  return g;
+  return smoothX(g);
 }
 function outerX(y) { for (let i = 1; i < PEG_OUT.length; i++) { const a = PEG_OUT[i - 1], b = PEG_OUT[i]; if (y <= b[1]) { const t = (y - a[1]) / (b[1] - a[1]); return a[0] + (b[0] - a[0]) * t; } } return PEG_OUT[PEG_OUT.length - 1][0]; }
 

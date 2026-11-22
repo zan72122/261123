@@ -1,0 +1,1 @@
+import * as THREE from 'three'; export function createBag(){const g=new THREE.Group();const m=new THREE.Object3D();g.add(m);return {group:g,mouth:m,setPose(){},setFill(){},setDusty(){},setOpen(){},squish(){},update(){},SIZE:{w:0.22,l:0.29}};}

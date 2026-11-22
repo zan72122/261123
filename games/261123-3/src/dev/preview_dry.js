@@ -7,7 +7,7 @@ const view = q.get('view') || 'spinner';
 const num = (k, d) => (q.get(k) != null ? Number(q.get(k)) : d);
 const CAMS = {
   spinner: { cam: [0, 0.62, 1.0], look: [0, 0.19, 0], fov: 40 },
-  open: { cam: [0.12, 0.85, 0.42], look: [0.12, 0.08, 0], fov: 45 },
+  open: { cam: [0.17, 0.95, 0.6], look: [0.17, 0.08, 0], fov: 50 },
   spin: { cam: [0, 0.62, 1.0], look: [0, 0.17, 0], fov: 40 },
   pole: { cam: [-1.4, 0.9, 0.55], look: [1.25, 0.85, 0.55], fov: 50 },
   clip: { cam: [1.0, 1.1, 0.3], look: [1.25, 1.06, 0.49], fov: 32 },

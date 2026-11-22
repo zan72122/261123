@@ -32,13 +32,14 @@ function addNoise(out, W, H, cx, cy, amp, rnd) {
   }
 }
 function heightToNormal(h, W, H, s, out) {
+  const xr = new Int32Array(W), xl = new Int32Array(W);
+  for (let x = 0; x < W; x++) { xr[x] = (x + 1) % W; xl[x] = (x - 1 + W) % W; }
   for (let y = 0; y < H; y++) {
     const yu = ((y + 1) % H) * W, yd = ((y - 1 + H) % H) * W, o = y * W;
     for (let x = 0; x < W; x++) {
-      const xr = (x + 1) % W, xl = (x - 1 + W) % W;
-      const nx = -(h[o + xr] - h[o + xl]) * s, ny = -(h[yu + x] - h[yd + x]) * s;
-      const inv = 1 / Math.sqrt(nx * nx + ny * ny + 1), i = (o + x) * 4;
-      out[i] = (nx * inv * 0.5 + 0.5) * 255; out[i + 1] = (ny * inv * 0.5 + 0.5) * 255; out[i + 2] = (inv * 0.5 + 0.5) * 255; out[i + 3] = 255;
+      const nx = -(h[o + xr[x]] - h[o + xl[x]]) * s, ny = -(h[yu + x] - h[yd + x]) * s;
+      const inv = 127.5 / Math.sqrt(nx * nx + ny * ny + 1), i = (o + x) << 2;
+      out[i] = nx * inv + 127.5; out[i + 1] = ny * inv + 127.5; out[i + 2] = inv + 127.5; out[i + 3] = 255;
     }
   }
 }
@@ -87,34 +88,38 @@ function injectWPos(shader) {
 function makeConcreteTex(N) {
   const rnd = makeRng(11), P = N * N;
   const mot = new Float32Array(P), brm = new Float32Array(P), fine = new Float32Array(P);
-  addNoise(mot, N, N, 5, 5, 0.5, rnd); addNoise(mot, N, N, 13, 13, 0.32, rnd); addNoise(mot, N, N, 37, 37, 0.2, rnd); addNoise(mot, N, N, 100, 100, 0.12, rnd);
-  addNoise(brm, N, N, 5, 360, 1.0, rnd); addNoise(brm, N, N, 3, 140, 0.7, rnd);
-  addNoise(fine, N, N, 230, 230, 1.0, rnd);
+  addNoise(mot, N, N, 9, 9, 0.55, rnd); addNoise(mot, N, N, 31, 31, 0.3, rnd);
+  addNoise(brm, N, N, 4, 360, 1.0, rnd);
+  addNoise(fine, N, N, 110, 110, 0.5, rnd); addNoise(fine, N, N, 260, 260, 0.8, rnd);
   const h = new Float32Array(P), pit = new Float32Array(P), wn = new Float32Array(P);
   const k = N / 1024;
-  for (let i = 0; i < P; i++) { const w = rnd() - 0.5; wn[i] = w; h[i] = brm[i] * 0.22 + fine[i] * 0.3 + w * 0.45 + mot[i] * 0.5; }
+  let s = 0x2545f491;
+  for (let i = 0; i < P; i++) { s ^= s << 13; s ^= s >>> 17; s ^= s << 5; const w = (s >>> 0) / 4294967296 - 0.5; wn[i] = w; h[i] = brm[i] * 0.2 + fine[i] * 0.32 + w * 0.42 + mot[i] * 0.4; }
   const pits = (n, r0, r1, depth) => {
     for (let p = 0; p < n; p++) {
-      const cx = rnd() * N, cy = rnd() * N, r = (r0 + rnd() * (r1 - r0)) * k, R = Math.ceil(r + 1);
-      for (let dy = -R; dy <= R; dy++) for (let dx = -R; dx <= R; dx++) {
-        const d = Math.hypot(dx, dy) / r; if (d >= 1) continue;
-        const x = ((Math.floor(cx) + dx) % N + N) % N, y = ((Math.floor(cy) + dy) % N + N) % N, i = y * N + x;
-        const f = 1 - d * d; h[i] -= depth * f; pit[i] = Math.max(pit[i], f);
+      const cx = Math.floor(rnd() * N), cy = Math.floor(rnd() * N), r = (r0 + rnd() * (r1 - r0)) * k, R = Math.ceil(r + 1), sq = 0.6 + rnd() * 0.8;
+      const ir2 = 1 / (r * r), a = sq * sq, b = 1 / a;
+      for (let dy = -R; dy <= R; dy++) {
+        const row = ((cy + dy + N) % N) * N;
+        for (let dx = -R; dx <= R; dx++) {
+          const f = 1 - (dx * dx * a + dy * dy * b) * ir2; if (f <= 0) continue;
+          const i = row + ((cx + dx + N) % N);
+          h[i] -= depth * f; if (f > pit[i]) pit[i] = f;
+        }
       }
     }
   };
-  pits(Math.round(3200 * k * k), 0.7, 1.6, 0.9); pits(Math.round(260 * k * k), 1.6, 3.4, 1.6); pits(Math.round(25 * k * k), 3, 5.5, 1.8);
+  pits(Math.round(2200 * k * k), 0.6, 1.4, 0.7); pits(Math.round(140 * k * k), 1.4, 3.0, 1.4); pits(Math.round(14 * k * k), 2.6, 4.5, 1.6);
   const col = new Uint8Array(P * 4), rgh = new Uint8Array(P * 4), nrm = new Uint8Array(P * 4);
   for (let i = 0; i < P; i++) {
-    let v = 1 + mot[i] * 0.075 + fine[i] * 0.03 + wn[i] * 0.07 + brm[i] * 0.018 - pit[i] * 0.3;
-    let r = 168, g = 163, b = 153;
-    const sp = rnd();
-    if (sp < 0.012) { const m = 0.82 + rnd() * 0.12; v *= m; r *= 1.02; b *= 0.96; } // dark sand grains
-    else if (sp < 0.022) v *= 1.08 + rnd() * 0.06;                                    // light grains
-    const tint = mot[i] * 0.02;
-    const o = i * 4;
-    col[o] = clamp255(r * v * (1 + tint)); col[o + 1] = clamp255(g * v); col[o + 2] = clamp255(b * v * (1 - tint * 1.3)); col[o + 3] = 255;
-    rgh[o] = 0; rgh[o + 1] = clamp255(255 * (0.86 + mot[i] * 0.05 - brm[i] * 0.025 + pit[i] * 0.1)); rgh[o + 2] = 0; rgh[o + 3] = 255;
+    let v = 1 + mot[i] * 0.11 + fine[i] * 0.035 + wn[i] * 0.075 + brm[i] * 0.02 - pit[i] * 0.2;
+    s ^= s << 13; s ^= s >>> 17; s ^= s << 5; const sp = (s >>> 0) / 4294967296;
+    let wr = 1, wb = 1;
+    if (sp < 0.01) { v *= 0.8 + sp * 12; wr = 1.03; wb = 0.95; }          // dark/brown sand grains
+    else if (sp < 0.02) v *= 1.06 + (sp - 0.01) * 6;                       // light grains
+    const tint = mot[i] * 0.03, o = i * 4;
+    col[o] = clamp255(173 * v * (1 + tint) * wr); col[o + 1] = clamp255(167 * v); col[o + 2] = clamp255(155 * v * (1 - tint * 1.3) * wb); col[o + 3] = 255;
+    rgh[o + 1] = clamp255(255 * (0.86 + mot[i] * 0.06 - brm[i] * 0.025 + pit[i] * 0.1)); rgh[o + 3] = 255;
   }
   heightToNormal(h, N, N, 0.9 * k, nrm);
   return { map: dataTex(col, N, N, true), roughnessMap: dataTex(rgh, N, N, false), normalMap: dataTex(nrm, N, N, false) };
@@ -226,7 +231,7 @@ function makeCrownTex(S) {
   }
   blobs.sort((p, q) => p.z - q.z);
   for (const b of blobs) {
-    const l = 15 + b.top * 14 + b.z * 12, h = 85 + rnd() * 25, s = 30 + rnd() * 20;
+    const l = 14 + b.top * 13 + b.z * 13 + (rnd() < 0.15 ? 8 : 0), h = 78 + rnd() * 30, s = 16 + rnd() * 18;
     const gr = g.createRadialGradient(b.x, b.y, 0, b.x, b.y, b.r);
     gr.addColorStop(0, `hsla(${h},${s}%,${l}%,0.95)`); gr.addColorStop(0.55, `hsla(${h},${s}%,${l}%,0.7)`); gr.addColorStop(1, `hsla(${h},${s}%,${l}%,0)`);
     g.fillStyle = gr; g.beginPath(); g.arc(b.x, b.y, b.r, 0, Math.PI * 2); g.fill();
@@ -237,7 +242,7 @@ function makeCrownTex(S) {
 function makeSidingTex(W, H) {
   const rnd = makeRng(17), P = W * H, boards = 6, bh = H / boards;
   const n1 = new Float32Array(P), n2 = new Float32Array(P);
-  addNoise(n1, W, H, 6, 90, 1, rnd); addNoise(n1, W, H, 40, 40, 0.6, rnd); addNoise(n2, W, H, 4, 6, 1, rnd);
+  addNoise(n1, W, H, 6, 60, 1, rnd); addNoise(n2, W, H, 4, 6, 1, rnd);
   const joints = []; for (let b = 0; b < boards; b++) joints.push(Math.floor(rnd() * W));
   const h = new Float32Array(P), col = new Uint8Array(P * 4), nrm = new Uint8Array(P * 4);
   for (let y = 0; y < H; y++) {
@@ -281,8 +286,8 @@ void main(){
   float az = dot(normalize(d.xz + 1e-5), sh) * 0.5 + 0.5;
   vec3 hor = mix(uAnti, uHor, az * az);
   float hp = max(h, 0.0);
-  vec3 col = mix(hor, uZen, pow(hp, 0.5));
-  col = mix(col, hor, exp(-hp * 14.0) * 0.45);
+  vec3 col = mix(hor, uZen, pow(hp, 0.38));
+  col = mix(col, hor * 1.06, exp(-hp * 22.0) * 0.5);
   float sdp = max(sd, 0.0);
   col += uGlow * (pow(sdp, 4.0) * 0.28 + pow(sdp, 40.0) * 0.6 + pow(sdp, 700.0) * 2.5) * (0.6 + 0.4 * exp(-hp * 4.0));
   if (h < 0.0) col = mix(hor * 0.85, uGround, smoothstep(0.0, -0.2, h));
@@ -322,7 +327,7 @@ const V = (x, y, z) => new THREE.Vector3(x, y, z).normalize();
 const MORNING_DIR = V(-0.62, 0.52, 0.25);
 const RAW_KEYS = [
   { t: 0.00, sun: SUN_DIR.clone(), light: SUN_DIR.clone(), lc: 0xfff1dc, li: 2.7, hs: 0xbcd7ff, hg: 0x8a7f6c, hi: 0.3, exp: EXPOSURE, env: ENV_INTENSITY,
-    zen: 0x1d58c4, hor: 0xc6dcef, anti: 0x86afe4, glow: 0xfff0d8, sunc: 0xfff4e0, cLit: 0xffffff, cShade: 0xaebdd2, ground: 0x4a5a3a, gain: 1.25, disc: 30, stars: 0, moon: 0, cover: 0.6, fog: 0xbcd0e2 },
+    zen: 0x134cc2, hor: 0x9cc2ec, anti: 0x6a9ee2, glow: 0xffeacc, sunc: 0xfff4e0, cLit: 0xffffff, cShade: 0xaebdd2, ground: 0x4a5a3a, gain: 1.25, disc: 30, stars: 0, moon: 0, cover: 0.6, fog: 0xbcd0e2 },
   { t: 0.30, sun: V(0.95, 0.21, 0.22), light: V(0.95, 0.22, 0.22), lc: 0xffc78a, li: 2.4, hs: 0xc4c8e0, hg: 0x8a7258, hi: 0.32, exp: 0.86, env: 0.42,
     zen: 0x2c5cb4, hor: 0xffd7a0, anti: 0x9db2d4, glow: 0xffb468, sunc: 0xffd8a0, cLit: 0xffe4c0, cShade: 0x9c9cae, ground: 0x3e4530, gain: 1.2, disc: 26, stars: 0, moon: 0, cover: 0.6, fog: 0xd8c8b0 },
   { t: 0.45, sun: V(0.99, 0.08, 0.10), light: V(0.99, 0.08, 0.10), lc: 0xff8a4c, li: 1.6, hs: 0xb894b4, hg: 0x6e5446, hi: 0.36, exp: 0.95, env: 0.3,
@@ -351,11 +356,13 @@ export function createWorld(ctx) {
   const group = new THREE.Group(); group.name = 'world';
   const T = L.TERRACE;
   const uTime = { value: 0 };
+  const __t = [[ "start", performance.now()]]; const __mark = (n) => __t.push([n, performance.now()]);
   const noiseTex = makeNoiseTex(256);
 
+  __mark("concrete terrace");
   // --- concrete terrace
   const conc = makeConcreteTex(low ? 512 : 1024);
-  const macro = makeMacroTex(512);
+  const macro = makeMacroTex(256);
   const concMat = new THREE.MeshStandardMaterial({ map: conc.map, normalMap: conc.normalMap, normalScale: new THREE.Vector2(0.55, 0.55), roughnessMap: conc.roughnessMap, roughness: 1, metalness: 0 });
   concMat.onBeforeCompile = (sh) => {
     injectWPos(sh);
@@ -388,9 +395,10 @@ export function createWorld(ctx) {
     const m = new THREE.Mesh(geo, concMat); m.receiveShadow = true; m.name = 'terrace'; group.add(m);
   }
 
+  __mark("lawn");
   // --- lawn
   const grassTex = makeGrassTex(512);
-  const HEDGE = { px: 6.2, pz: 5.95, nx: -4.9 }; // inner (garden-facing) faces of the three hedges
+  const HEDGE = { px: 6.3, pz: 5.95, nx: -4.9, hx: 1.25 }; // inner (garden-facing) faces of the three hedges
   const lawnMat = new THREE.MeshStandardMaterial({ map: grassTex, roughness: 0.95, metalness: 0 });
   lawnMat.onBeforeCompile = (sh) => {
     injectWPos(sh);
@@ -412,6 +420,7 @@ export function createWorld(ctx) {
     const m = new THREE.Mesh(geo, lawnMat); m.receiveShadow = true; m.name = 'lawn'; group.add(m);
   }
 
+  __mark("grass tufts (instanced)");
   // --- grass tufts (instanced)
   let grass;
   {
@@ -451,17 +460,17 @@ export function createWorld(ctx) {
     const pts = [];
     const outside = (x, z) => x > T.maxX + 0.005 || x < T.minX - 0.005 || z > T.maxZ + 0.005;
     const add = (x, z, s) => { if (outside(x, z) && x < HEDGE.px - 0.02 && x > HEDGE.nx + 0.02 && z < HEDGE.pz - 0.02) pts.push([x, z, s]); };
-    const fringe = (n, fn) => { for (let i = 0; i < n; i++) { const u = rnd(), d = 0.008 + Math.pow(rnd(), 1.8) * 0.32; fn(u, d, 1.0 + rnd() * 0.7 * (1 - d * 2)); } };
-    fringe(230, (u, d, s) => add(T.maxX + d, T.minZ + 0.03 + u * (T.maxZ - T.minZ), s));
-    fringe(200, (u, d, s) => add(T.minX - d, T.minZ + 0.03 + u * (T.maxZ - T.minZ), s));
-    fringe(280, (u, d, s) => add(T.minX + u * (T.maxX - T.minX), T.maxZ + d, s));
-    for (let i = 0; i < 760; i++) add(T.maxX + 0.05 + Math.pow(rnd(), 1.5) * (HEDGE.px - T.maxX - 0.1), T.minZ + 0.05 + rnd() * 6.2, 0.7 + rnd() * 0.45);
-    for (let i = 0; i < 140; i++) add(HEDGE.px - 0.03 - Math.pow(rnd(), 2) * 0.25, T.minZ + rnd() * 7.5, 1.2 + rnd() * 0.8);
+    const fringe = (n, fn) => { for (let i = 0; i < n; i++) { const u = rnd(), d = 0.006 + Math.pow(rnd(), 2.2) * 0.3; fn(u, d, 0.75 + rnd() * 0.6 * (1 - d * 2.5)); } };
+    fringe(520, (u, d, s) => add(T.maxX + d, T.minZ + 0.03 + u * (T.maxZ - T.minZ), s));
+    fringe(300, (u, d, s) => add(T.minX - d, T.minZ + 0.03 + u * (T.maxZ - T.minZ), s));
+    fringe(480, (u, d, s) => add(T.minX + u * (T.maxX - T.minX), T.maxZ + d, s));
+    for (let i = 0; i < 1100; i++) add(T.maxX + 0.05 + Math.pow(rnd(), 1.7) * (HEDGE.px - T.maxX - 0.1), T.minZ + 0.05 + rnd() * 6.2, 0.45 + rnd() * 0.35);
+    for (let i = 0; i < 160; i++) add(HEDGE.px - 0.03 - Math.pow(rnd(), 2) * 0.25, T.minZ + rnd() * 7.5, 1.0 + rnd() * 0.8);
     for (let i = 0; i < 120; i++) add(T.minX + (rnd() - 0.5) * 6, T.maxZ + 0.1 + rnd() * 3.5, 0.8 + rnd() * 0.4);
     for (let i = pts.length - 1; i > 0; i--) { const j = Math.floor(rnd() * (i + 1)); const t = pts[i]; pts[i] = pts[j]; pts[j] = t; }
     grass = new THREE.InstancedMesh(geo, mat, pts.length);
     const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), sc = new THREE.Vector3(), p = new THREE.Vector3(), c = new THREE.Color();
-    const gA = new THREE.Color(0x5f7f30), gB = new THREE.Color(0x9fb052), gC = new THREE.Color(0x8c8c4c);
+    const gA = new THREE.Color(0x55742b), gB = new THREE.Color(0x8ea648), gC = new THREE.Color(0x9a9450);
     pts.forEach(([x, z, s], i) => {
       e.set((rnd() - 0.5) * 0.25, rnd() * Math.PI * 2, (rnd() - 0.5) * 0.25); q.setFromEuler(e);
       sc.set(s * (0.8 + rnd() * 0.4), s * (0.75 + rnd() * 0.5), s * (0.8 + rnd() * 0.4));
@@ -475,9 +484,10 @@ export function createWorld(ctx) {
     group.add(grass);
   }
 
+  __mark("house wall");
   // --- house wall
   {
-    const sid = makeSidingTex(512, 512);
+    const sid = makeSidingTex(512, 256);
     const x0 = -7, x1 = 7.2, y0 = 0.3, y1 = 3.2, z = L.WALL_Z;
     const geo = new THREE.PlaneGeometry(x1 - x0, y1 - y0, 1, 8).translate((x0 + x1) / 2, (y0 + y1) / 2, z);
     const uv = geo.attributes.uv, p = geo.attributes.position, cols = [];
@@ -490,7 +500,7 @@ export function createWorld(ctx) {
     const m = new THREE.Mesh(geo, mat); m.receiveShadow = true; m.name = 'houseWall'; group.add(m);
     // foundation band (mortar grey)
     const fgeo = worldUV(new THREE.BoxGeometry(x1 - x0, 0.36, 0.06).translate((x0 + x1) / 2, 0.12, z - 0.005), 1.5, 0.37, 0.21);
-    const fmat = new THREE.MeshStandardMaterial({ map: conc.map, normalMap: conc.normalMap, roughnessMap: conc.roughnessMap, color: 0xa29f99, roughness: 1, metalness: 0 });
+    const fmat = new THREE.MeshStandardMaterial({ map: conc.map, normalMap: conc.normalMap, roughnessMap: conc.roughnessMap, color: 0xd2cec6, roughness: 1, metalness: 0 });
     const fm = new THREE.Mesh(fgeo, fmat); fm.receiveShadow = true; group.add(fm);
     // fixtures: flashing, window frame, downspout (one merged mesh, vertex coloured)
     const keep = ['position', 'normal', 'color'];
@@ -513,23 +523,24 @@ export function createWorld(ctx) {
     group.add(glass);
   }
 
+  __mark("hedges: dark core boxes + instanced alpha-tested leaf cards");
   // --- hedges: dark core boxes + instanced alpha-tested leaf cards
   {
     const leaf = makeLeafTex(512);
-    const H = 1.5, th = 0.65;
+    const th = 0.65;
     const cores = [
-      { x0: HEDGE.px, x1: HEDGE.px + th, z0: T.minZ, z1: HEDGE.pz + th, face: [-1, 0, 0], dens: 60, top: 40 },
-      { x0: HEDGE.nx - th, x1: HEDGE.px, z0: HEDGE.pz, z1: HEDGE.pz + th, face: [0, 0, -1], dens: 26, top: 18 },
-      { x0: HEDGE.nx - th, x1: HEDGE.nx, z0: T.minZ, z1: HEDGE.pz, face: [1, 0, 0], dens: 26, top: 18 },
+      { x0: HEDGE.px, x1: HEDGE.px + th, z0: T.minZ, z1: HEDGE.pz + th, face: [-1, 0, 0], dens: 60, top: 40, H: HEDGE.hx },
+      { x0: HEDGE.nx - th, x1: HEDGE.px, z0: HEDGE.pz, z1: HEDGE.pz + th, face: [0, 0, -1], dens: 26, top: 18, H: 1.5 },
+      { x0: HEDGE.nx - th, x1: HEDGE.nx, z0: T.minZ, z1: HEDGE.pz, face: [1, 0, 0], dens: 26, top: 18, H: 1.5 },
     ];
-    const coreGeos = cores.map((c) => new THREE.BoxGeometry(c.x1 - c.x0, H - 0.06, c.z1 - c.z0).translate((c.x0 + c.x1) / 2, (H - 0.06) / 2, (c.z0 + c.z1) / 2));
+    const coreGeos = cores.map((c) => new THREE.BoxGeometry(c.x1 - c.x0, c.H - 0.06, c.z1 - c.z0).translate((c.x0 + c.x1) / 2, (c.H - 0.06) / 2, (c.z0 + c.z1) / 2));
     const coreTex = leaf.map.clone(); coreTex.repeat.set(5, 3); coreTex.needsUpdate = true;
-    const coreMat = new THREE.MeshStandardMaterial({ map: coreTex, color: 0x5a6a50, roughness: 0.9, metalness: 0 });
+    const coreMat = new THREE.MeshStandardMaterial({ map: coreTex, color: 0x7a8a68, roughness: 0.9, metalness: 0 });
     const coreMesh = new THREE.Mesh(mergeGeometries(coreGeos), coreMat); coreMesh.name = 'hedgeCore'; group.add(coreMesh);
     const rnd = makeRng(57), cards = [];
     const nrm = new THREE.Vector3(), up = new THREE.Vector3(0, 1, 0);
     for (const c of cores) {
-      const f = new THREE.Vector3(...c.face), alongX = Math.abs(f.z) > 0.5;
+      const H = c.H, f = new THREE.Vector3(...c.face), alongX = Math.abs(f.z) > 0.5;
       const len = alongX ? c.x1 - c.x0 : c.z1 - c.z0;
       const nFront = Math.round(len * H * c.dens), nTop = Math.round(len * th * c.top);
       const fx = alongX ? null : (f.x < 0 ? c.x0 : c.x1), fz = alongX ? (f.z < 0 ? c.z0 : c.z1) : null;
@@ -563,12 +574,14 @@ export function createWorld(ctx) {
     im.name = 'hedgeLeaves'; im.computeBoundingSphere(); group.add(im);
   }
 
+  __mark("distant tree crowns (soft, out of focus) + neighbour houses");
   // --- distant tree crowns (soft, out of focus) + neighbour houses
   {
     const crownTex = makeCrownTex(512);
     const defs = [
-      [9.8, 3.3, -2.0, 5.0, 4.4, 0.95, false], [12.5, 4.4, 5.6, 6.2, 5.6, 0.85, true], [15, 5.0, -6.2, 6.5, 6.0, 0.8, true],
-      [8.2, 2.4, 3.4, 2.8, 2.6, 1.0, false], [-8, 3.4, 2.5, 5.5, 5, 0.9, false], [2.5, 3.6, 10, 6, 5.2, 0.9, true], [-4, 3, 9.5, 4.5, 4, 0.85, false],
+      [10.5, 3.2, -3.6, 5.0, 4.4, 0.95, false], [12.5, 4.2, 5.8, 6.2, 5.6, 0.85, true], [17, 5.0, -8.5, 7, 6.4, 0.8, true],
+      [8.4, 2.3, 4.6, 2.6, 2.4, 1.0, false], [-8, 3.4, 2.5, 5.5, 5, 0.9, false], [2.5, 3.6, 10, 6, 5.2, 0.9, true], [-4, 3, 9.5, 4.5, 4, 0.85, false],
+      [20, 4.6, 9.5, 6, 5.5, 0.8, false],
     ];
     const ref = new THREE.Vector3(0, 1, 0.5);
     defs.sort((a, b) => Math.hypot(b[0] - ref.x, b[2] - ref.z) - Math.hypot(a[0] - ref.x, a[2] - ref.z));
@@ -597,14 +610,15 @@ export function createWorld(ctx) {
       const gab = new THREE.BufferGeometry(); gab.setAttribute('position', new THREE.Float32BufferAttribute([cx - w / 2, h, cz - d / 2, cx + w / 2, h, cz - d / 2, cx, y1 - 0.1, cz - d / 2, cx + w / 2, h, cz + d / 2, cx - w / 2, h, cz + d / 2, cx, y1 - 0.1, cz + d / 2], 3));
       gab.computeVertexNormals(); walls.push(vcolor(gab, wallCol));
     };
-    house(21, -3.8, 7, 7, 5.6, 1.6, 0xd6cfc0, 0x4c535b);
-    house(27, 7.5, 8, 7, 5.2, 1.4, 0xc9ced0, 0x6a5a50);
+    house(30, -11, 8, 7, 5.6, 1.6, 0xd6cfc0, 0x4c535b);
+    house(33, 13, 8, 7, 5.2, 1.4, 0xc9ced0, 0x6a5a50);
     house(-14, -1, 7, 8, 5.4, 1.5, 0xd3cbbd, 0x4c535b);
     const hm = new THREE.Mesh(mergeGeometries(walls), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9, metalness: 0 }));
     const rm = new THREE.Mesh(mergeGeometries(roofs), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.7, metalness: 0.1, side: THREE.DoubleSide }));
     hm.name = 'neighbourHouses'; rm.name = 'neighbourRoofs'; group.add(hm, rm);
   }
 
+  __mark("sky dome");
   // --- sky dome
   const skyU = {
     uZen: { value: new THREE.Color() }, uHor: { value: new THREE.Color() }, uAnti: { value: new THREE.Color() }, uGlow: { value: new THREE.Color() },
@@ -617,8 +631,9 @@ export function createWorld(ctx) {
   sky.frustumCulled = false; sky.renderOrder = -10; sky.name = 'sky';
   sky.onBeforeRender = (r, s, cam) => { sky.position.copy(cam.position); sky.updateMatrixWorld(); };
   group.add(sky);
-  scene.fog = new THREE.Fog(0xbcd0e2, 20, 160);
+  scene.fog = new THREE.Fog(0xbcd0e2, 10, 110);
 
+  __mark("lights");
   // --- lights
   const sun = new THREE.DirectionalLight(0xfff1dc, 2.7);
   sun.castShadow = true;
@@ -643,6 +658,7 @@ export function createWorld(ctx) {
     sun.target.updateMatrixWorld();
   }
 
+  __mark("time of day");
   // --- time of day
   let tod = 0;
   const sSky = new THREE.Vector3();
@@ -684,7 +700,7 @@ export function createWorld(ctx) {
     const d = skyU.uDrift.value; d.x = (d.x + dt * 0.0011) % 1; d.y = (d.y + dt * 0.0005) % 1;
   }
 
-  setTimeOfDay(0);
+  __mark("end"); setTimeOfDay(0);
   if (low) setQuality(true);
 
   return {
@@ -696,6 +712,6 @@ export function createWorld(ctx) {
     setQuality,
     sunDir,
     sun, hemi,
-    update,
+    update, _t: __t,
   };
 }

@@ -63,7 +63,7 @@ export function makeHandTexture() {
   // base: warm pale skin, lit from upper left
   g.save(); upright(g);
   const base = g.createLinearGradient(-40, 0, 120, 300);
-  base.addColorStop(0, '#f8dccb'); base.addColorStop(0.55, '#f1cdb7'); base.addColorStop(1, '#e2b199');
+  base.addColorStop(0, '#f6d6c2'); base.addColorStop(0.55, '#edc3a9'); base.addColorStop(1, '#dba487');
   g.fillStyle = base;
   // each part: fill + own shading so the parts read as separate rounded forms
   const part = (key, hx, hy, hr, shade = 'rgba(176,104,80,0.22)') => {
@@ -130,7 +130,7 @@ export function makeHandTexture() {
   // final: soft contact shadow halo + skin, wrist fading away
   const out = mk(W, H), og = out.getContext('2d');
   og.save();
-  og.shadowColor = 'rgba(70,40,30,0.45)'; og.shadowBlur = 10; og.shadowOffsetY = 3;
+  og.shadowColor = 'rgba(60,30,20,0.6)'; og.shadowBlur = 9; og.shadowOffsetY = 3;
   og.drawImage(skin, 0, 0);
   og.restore();
   og.globalCompositeOperation = 'destination-out';

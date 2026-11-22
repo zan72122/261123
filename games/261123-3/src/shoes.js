@@ -64,7 +64,7 @@ function offsetPoly(poly, d) { // d > 0: outward
   const n = poly.length, out = [];
   // orientation
   let area = 0; for (let i = 0; i < n; i++) { const a = poly[i], b = poly[(i + 1) % n]; area += a.x * b.z - b.x * a.z; }
-  const sg = area > 0 ? -1 : 1;
+  const sg = area > 0 ? 1 : -1;
   for (let i = 0; i < n; i++) {
     const a = poly[(i - 1 + n) % n], b = poly[(i + 1) % n];
     const tx = b.x - a.x, tz = b.z - a.z, l = Math.hypot(tx, tz) || 1;
@@ -141,7 +141,7 @@ function evalUpper(S, u, t, out) {
   const H = R.y - UP_Y0;
   const w = smooth(0.013, 0.05, D);
   let ex = 0.30 + (1 - 0.30) * w, ey = 1 + (0.10 - 1) * w; const el = Math.hypot(ex, ey); ex /= el; ey /= el;
-  const a = H * (0.45 + 0.1 * w), b = (H * 0.45) * (1 - w) + (D * 0.5) * w;
+  const a = H * (0.45 + 0.32 * w), b = (H * 0.45) * (1 - w) + (D * 0.55) * w;
   const p1r = 0, p1y = UP_Y0 + a, p2r = D - ex * b, p2y = R.y - ey * b;
   const it = 1 - t;
   const r = 3 * it * it * t * p1r + 3 * it * t * t * p2r + t * t * t * D;
@@ -372,11 +372,11 @@ function buildBand(S, low) {
 function buildTab(S) {
   const r = S.rim[0]; const z0 = r.z, y0 = r.y, x0 = r.x;
   const curve = new THREE.CatmullRomCurve3([
-    new THREE.Vector3(x0, y0 - 0.0075, z0 - 0.0026), new THREE.Vector3(x0, y0 + 0.001, z0 - 0.0023),
-    new THREE.Vector3(x0, y0 + 0.0068, z0 - 0.0005), new THREE.Vector3(x0, y0 + 0.0079, z0 + 0.0018),
-    new THREE.Vector3(x0, y0 + 0.0045, z0 + 0.0042), new THREE.Vector3(x0, y0 - 0.002, z0 + 0.0044),
-    new THREE.Vector3(x0, y0 - 0.009, z0 + 0.0052)]);
-  const NS = 28, RS = 10, hw = 0.0046, ht = 0.00065, pos = [], nrm = [], uv = [];
+    new THREE.Vector3(x0, y0 - 0.0075, z0 - 0.0027), new THREE.Vector3(x0, y0 + 0.000, z0 - 0.0024),
+    new THREE.Vector3(x0, y0 + 0.0045, z0 - 0.0002), new THREE.Vector3(x0, y0 + 0.0058, z0 + 0.0028),
+    new THREE.Vector3(x0, y0 + 0.0035, z0 + 0.0052), new THREE.Vector3(x0, y0 - 0.002, z0 + 0.0050),
+    new THREE.Vector3(x0, y0 - 0.009, z0 + 0.0056)]);
+  const NS = 28, RS = 10, hw = 0.0045, ht = 0.0009, pos = [], nrm = [], uv = [];
   for (let i = 0; i <= NS; i++) {
     const t = i / NS, p = curve.getPoint(t), tg = curve.getTangent(t);
     const side = new THREE.Vector3(1, 0, 0), nn = new THREE.Vector3().crossVectors(tg, side).normalize();
@@ -425,13 +425,13 @@ function buildTextures() {
   for (let y = 0; y < MS; y++) for (let x = 0; x < MS; x++) {
     const u = x / MS, v = y / MS, o = (y * MS + x) * 4;
     const warp = fbm(u, v, 3, 3, 91) - 0.5;
-    let r = fbm(u + warp * 0.12, v - warp * 0.1, 4, 5, 7); r = Math.min(1, Math.max(0, (r - 0.5) * 2.1 + 0.5));
-    // cracks in dried crust
-    const cr = Math.abs(fbm(u, v, 6, 3, 33) - 0.5); const crack = cr < 0.018 ? 1 : 0;
-    let g = 0; const hh = hash2(x, y, 5); if (hh > 0.988) g = 0.55 + 0.45 * hash2(x, y, 6); else if (hh > 0.975) g = 0.25;
-    const b = fbm(u, v, 5, 4, 51);
-    const a = fbm(u, v, 16, 3, 71);
-    md[o] = (crack ? r * 0.35 : r) * 255; md[o + 1] = g * 255; md[o + 2] = Math.min(1, Math.max(0, (b - 0.5) * 1.9 + 0.5)) * 255; md[o + 3] = a * 255;
+    let r = fbm(u + warp * 0.08, v - warp * 0.07, 7, 5, 7); r = Math.min(1, Math.max(0, (r - 0.5) * 1.9 + 0.5));
+    // fine cracks in dried crust
+    const cr = Math.abs(fbm(u, v, 10, 3, 33) - 0.5); const crack = (cr < 0.009 && r > 0.5) ? 1 : 0;
+    let g = 0; const hh = hash2(x, y, 5); if (hh > 0.985) g = 0.55 + 0.45 * hash2(x, y, 6); else if (hh > 0.965) g = 0.22;
+    const b = fbm(u, v, 9, 4, 51);
+    const a = fbm(u, v, 24, 3, 71);
+    md[o] = (crack ? r * 0.6 : r) * 255; md[o + 1] = g * 255; md[o + 2] = Math.min(1, Math.max(0, (b - 0.5) * 1.9 + 0.5)) * 255; md[o + 3] = a * 255;
   }
   const mud = new THREE.DataTexture(md, MS, MS, THREE.RGBAFormat);
   mud.wrapS = mud.wrapT = THREE.RepeatWrapping; mud.magFilter = THREE.LinearFilter; mud.minFilter = THREE.LinearMipmapLinearFilter; mud.generateMipmaps = true; mud.needsUpdate = true;
@@ -591,7 +591,7 @@ vec3 clean = canvasC; float cleanR = canvasR; float capM = 0.0; float sideW = sm
   myEmis = canvasC * vec3(1.0, 0.96, 0.88) * 0.06 * uShine;
 #endif
 #ifdef PART_INSOLE
-  clean = vec3(0.60, 0.585, 0.54) * mix(vec3(1.0), vec3(0.72, 0.74, 0.76), uWet);
+  clean = vec3(0.56, 0.53, 0.46) * mix(vec3(1.0), vec3(0.72, 0.74, 0.76), uWet);
   cleanR = mix(0.85, 0.5, uWet);
   sideW = 0.0;
 #endif
@@ -603,7 +603,7 @@ vec3 clean = canvasC; float cleanR = canvasR; float capM = 0.0; float sideW = sm
   sideW = 1.0;
 #endif
 #ifdef PART_TREAD
-  vec4 ta = texture2D(uAux, vUv);
+  vec4 ta = texture2D(uAux, vMapUv);
   clean = vec3(0.68, 0.66, 0.60) * (1.0 - ta.r * 0.25);
   float grime = 0.35 + 0.65 * uAvg;
   clean = mix(clean, vec3(0.16, 0.13, 0.10), clamp(ta.r * 0.9 * grime + (ta.g - 0.3) * 0.5 * grime, 0.0, 1.0));
@@ -614,22 +614,25 @@ vec3 clean = canvasC; float cleanR = canvasR; float capM = 0.0; float sideW = sm
 vec2 duv = vec2((lp.x - uBox.x) * uBox.z, (lp.z - uBox.y) * uBox.w);
 float dAmt = texture2D(uDirt, duv).r;
 dAmt = mix(dAmt, min(dAmt, uAvg * 1.15 + 0.03), sideW);
-vec4 mudT = texture2D(uMud, lp.xz * 13.0);
-vec4 mudS = texture2D(uMud, vec2(lp.x + lp.z, lp.y * 1.4) * 13.0 + 0.37);
+vec4 mudT = texture2D(uMud, lp.xz * 9.0);
+vec4 mudS = texture2D(uMud, vec2(lp.x + lp.z, lp.y * 1.4) * 9.0 + 0.37);
 vec4 mud = mix(mudS, mudT, smoothstep(0.25, 0.75, abs(ln.y)));
 float thr = mud.b;
-float dA = smoothstep(thr * 0.72, thr * 0.72 + 0.28, dAmt);
-float crust = smoothstep(0.45, 0.8, mud.r);
-vec3 mc = mix(vec3(0.020, 0.0155, 0.011), vec3(0.092, 0.077, 0.060), crust);
-mc *= 0.72 + 0.56 * mud.a;
-mc = mix(mc, vec3(0.30, 0.245, 0.17), mud.g * (0.4 + 0.6 * crust));
-float mr = mix(0.46, 0.97, crust); mr = mix(mr, mr * 0.62, uWet);
-// residual stain where partly scrubbed
-clean = mix(clean, clean * vec3(0.56, 0.50, 0.43), smoothstep(0.0, 0.75, dAmt) * 0.55);
+// thick crust patches (break up last) + a translucent smeared film (fades gradually)
+float dA = smoothstep(thr * 0.5 + 0.33, thr * 0.5 + 0.5, dAmt);
+float film = smoothstep(0.0, 0.85, dAmt) * 0.88;
+float crust = smoothstep(0.42, 0.82, mud.r);
+vec3 mc = mix(vec3(0.024, 0.017, 0.011), vec3(0.085, 0.070, 0.052), crust);
+mc *= 0.75 + 0.5 * mud.a;
+mc = mix(mc, vec3(0.28, 0.225, 0.155), mud.g * (0.35 + 0.65 * crust));
+float mr = mix(0.6, 0.97, crust); mr = mix(mr, mr * 0.5, uWet);
+vec3 filmC = mix(vec3(0.22, 0.19, 0.15), vec3(0.05, 0.038, 0.028), smoothstep(0.15, 0.8, dAmt)) * (0.8 + 0.4 * mud.a);
+clean = mix(clean, filmC, film);
+cleanR = mix(cleanR, max(cleanR, 0.8), film);
 vec3 alb = mix(clean, mc, dA);
 myRough = mix(cleanR, mr, dA);
 myH += dA * (crust * 0.00045 + mud.g * 0.00012);
-myEmis *= (1.0 - dA);
+myEmis *= (1.0 - dA) * (1.0 - film);
 diffuseColor.rgb = alb;
 `;
 const GLSL_BUMP = /* glsl */`
@@ -800,7 +803,7 @@ export function createShoe(ctx, { side = 'R' } = {}) {
           const o = iz * GX + ix, d = dirt[o]; if (d <= 0) continue;
           const f = (1 - d2) * (1 - d2);
           // crusty dirt resists a little more at first
-          const take = Math.min(d, st * f * (0.16 + 0.12 * (1 - d)));
+          const take = Math.min(d, st * f * (0.035 + 0.035 * (1 - d)));
           dirt[o] = d - take; rem += take * W[o]; any = true;
         }
       }

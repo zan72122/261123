@@ -45,7 +45,7 @@ let last = performance.now(), frames = 0;
   const dt = Math.min(0.05, (now - last) / 1000); last = now;
   world.update(dt);
   renderer.render(scene, camera);
-  if (++frames === 2) { tris = renderer.info.render.triangles; console.warn(`world build ${ms.toFixed(0)} ms, tris ${tris}, calls ${renderer.info.render.calls}`); }
+  if (++frames === 2) { tris = renderer.info.render.triangles; console.warn(world._t.map((x,i,a)=>i?a[i-1][0]+":"+(x[1]-a[i-1][1]).toFixed(0):"").join(" ")); console.warn(`world build ${ms.toFixed(0)} ms, tris ${tris}, calls ${renderer.info.render.calls}`); }
   window.__ready = true;
   requestAnimationFrame(loop);
 })(last);
