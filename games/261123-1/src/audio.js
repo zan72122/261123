@@ -20,7 +20,6 @@
 
   function clamp(x, a, b) { return x < a ? a : x > b ? b : x; }
   function num(x, d) { return (typeof x === 'number' && isFinite(x)) ? x : d; }
-  function nowMs() { return (window.performance && performance.now) ? performance.now() : Date.now(); }
   function mtof(m) { return 440 * Math.pow(2, (m - 69) / 12); }
 
   // ---------------------------------------------------------------- 初期化
@@ -419,7 +418,7 @@
       mbox(v, tf, mtof(84) * p, 0.3, 1.0);
       mbox(v, tf, mtof(91) * p, 0.18, 0.9);
     }],
-    lullaby: [0.36, function (v, t, p) {
+    lullaby: [0.26, function (v, t, p) {
       // オリジナル: 3拍子 8小節、ハ長調、ゆっくり（最後にリタルダンド）
       var mel = [
         [76, 2], [74, 1], [72, 2], [67, 1], [69, 1], [72, 1], [77, 1], [76, 3],
@@ -449,7 +448,7 @@
       mbox(v, fin + 0.05, mtof(64) * p, 0.1, 2.0);
       mbox(v, fin + 0.1, mtof(67) * p, 0.09, 2.0);
     }],
-    whoosh: [0.4, function (v, t, p) {
+    whoosh: [0.25, function (v, t, p) {
       noise(v, { t: t, ftype: 'bandpass', f: 380 * p, f1: 1700 * p, glide: 0.18, q: 1.3, g: 0.5, a: 0.14, d: 0.22 });
       noise(v, { t: t + 0.05, ftype: 'bandpass', f: 900 * p, f1: 2600 * p, glide: 0.2, q: 2, g: 0.15, a: 0.1, d: 0.18 });
     }]
@@ -528,7 +527,7 @@
       m.stutCents.connect(m.oscs[i].o.detune);
     }
     m.wob.start(t); m.wob2.start(t); m.stut.start(t);
-    m.bs = 1; m.lastMs = nowMs(); m.prev = null; m.on = false;
+    m.bs = 1; m.lastMs = ctx.currentTime * 1000; m.prev = null; m.on = false;
     return m;
   }
 
@@ -559,7 +558,7 @@
       var load = clamp(num(opts.load, 0), 0, 1);
       var bat = clamp(num(opts.battery, 1), 0, 1);
       var m = motor;
-      var ms = nowMs(), dt = clamp((ms - m.lastMs) / 1000, 0, 0.25);
+      var ms = ctx.currentTime * 1000, dt = clamp((ms - m.lastMs) / 1000, 0, 0.25);
       m.lastMs = ms;
       // 電池はゆっくり落ちる（うぃ…ぃ…ん）、交換したらすぐ戻る
       if (bat < m.bs) m.bs += (bat - m.bs) * (1 - Math.exp(-dt / 0.45));
@@ -570,7 +569,7 @@
       var lo = run ? 1 - pw : 0;
 
       var freq = run ? F0 * (1 - 0.38 * load) * (0.28 + 0.72 * pw) : F0 * 0.25;
-      var level = run ? 0.17 * (0.3 + 0.7 * pw) * (1 + 0.15 * load) : 0;
+      var level = run ? 0.12 * (0.3 + 0.7 * pw) * (1 + 0.15 * load) * clamp((bs - 0.035) / 0.15, 0, 1) : 0;
       var cut = (2400 - 950 * load) * (0.5 + 0.5 * pw);
       var hiss = run ? 0.03 * pw * pw * (1 - 0.45 * load) : 0;
       var grit = run ? 0.11 * load * pw : 0;
