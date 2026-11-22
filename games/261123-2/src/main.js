@@ -1,6 +1,6 @@
 // ENGINE: renderer, loop, quality, input, camera rig, hints, save, fallback, texture loading.
 import * as THREE from 'three';
-import { ASSETS } from './assets.gen.js';
+import { PREVIEW, HD } from './assets.gen.js';
 import { create as createAudio } from './audio.js';
 import { create as createWorld } from './world.js';
 import { create as createLeaves } from './leaves.js';
@@ -20,6 +20,7 @@ function showFallback(why) {
   if (dead) return;
   dead = true;
   try { if (raf) cancelAnimationFrame(raf); } catch (e) {}
+  try { const fb = document.getElementById('fb'); if (fb && !fb.getAttribute('src')) fb.src = 'assets/fallback.webp'; } catch (e) {}
   try { document.body.classList.add('nogl'); } catch (e) {}
   if (why) try { console.warn('fallback:', why); } catch (e) {}
 }
@@ -93,38 +94,55 @@ function makeNoiseTex() {
   return t;
 }
 
-const normalCanvasCache = new Map(); // image -> Map(strength -> canvas)
-const normalTexCache = new Map();    // tex.uuid|strength -> texture
-let maxAniso = 4;
-function normalFrom(tex, strength = 2) {
-  if (!tex) return null;
-  const key = tex.uuid + '|' + strength;
-  const hit = normalTexCache.get(key);
-  if (hit) return hit;
-  const img = tex.image;
-  let byImg = normalCanvasCache.get(img);
-  if (!byImg) { byImg = new Map(); normalCanvasCache.set(img, byImg); }
-  let cv = byImg.get(strength);
-  if (!cv) {
-    cv = document.createElement('canvas');
-    const iw = (img && (img.naturalWidth || img.width)) || 1, ih = (img && (img.naturalHeight || img.height)) || 1;
-    const sc = Math.min(1, 512 / Math.max(iw, ih));
-    const W = Math.max(1, Math.round(iw * sc)), H = Math.max(1, Math.round(ih * sc));
-    cv.width = W; cv.height = H;
-    const ctx = cv.getContext('2d', { willReadFrequently: true });
-    try {
-      ctx.drawImage(img, 0, 0, W, H);
-      const src = ctx.getImageData(0, 0, W, H).data;
-      const L = new Float32Array(W * H);
-      for (let i = 0; i < W * H; i++) L[i] = (src[i * 4] * 0.299 + src[i * 4 + 1] * 0.587 + src[i * 4 + 2] * 0.114) / 255;
-      const wrap = tex.wrapS === THREE.RepeatWrapping;
-      const at = (x, y) => {
-        if (wrap) { x = (x + W) % W; y = (y + H) % H; } else { x = clamp(x, 0, W - 1); y = clamp(y, 0, H - 1); }
-        return L[y * W + x];
-      };
-      const out = ctx.createImageData(W, H), o = out.data;
-      const s = strength * (W / 256);
-      for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+// ---------------------------------------------------------------- textures
+// Start-up uses small preview images (inlined, ~90 KB in all) so the first scene shows at once; the full-resolution
+// images stream in from hd/*.js while playing and are swapped in everywhere a texture shares their Source
+// (G.tex entries, every clone of them, and the normal maps derived from them).
+const srcUsers = new Map(); // THREE.Source -> Set<Texture>
+function trackTex(t) {
+  let set = srcUsers.get(t.source);
+  if (!set) { set = new Set(); srcUsers.set(t.source, set); }
+  set.add(t);
+  t.clone = trackedClone;
+  return t;
+}
+function trackedClone() { return trackTex(THREE.Texture.prototype.clone.call(this)); }
+// point every texture that uses `old` at `ns`; dispose first so WebGL re-allocates storage for the new size
+function swapSource(old, ns) {
+  const set = srcUsers.get(old);
+  if (!set) return null;
+  srcUsers.delete(old);
+  srcUsers.set(ns, set);
+  for (const t of set) {
+    if (t.source !== old) continue;
+    try { t.dispose(); } catch (e) {}
+    t.source = ns;
+    t.needsUpdate = true;
+  }
+  return set;
+}
+
+// Sobel normal map from luminance; a generator so the full-size one can be built a few rows per frame.
+function* normalGen(img, strength, wrap) {
+  const cv = document.createElement('canvas');
+  const iw = (img && (img.naturalWidth || img.width)) || 1, ih = (img && (img.naturalHeight || img.height)) || 1;
+  const sc = Math.min(1, 512 / Math.max(iw, ih));
+  const W = Math.max(1, Math.round(iw * sc)), H = Math.max(1, Math.round(ih * sc));
+  cv.width = W; cv.height = H;
+  const ctx = cv.getContext('2d', { willReadFrequently: true });
+  try {
+    ctx.drawImage(img, 0, 0, W, H);
+    const src = ctx.getImageData(0, 0, W, H).data;
+    const L = new Float32Array(W * H);
+    for (let i = 0; i < W * H; i++) L[i] = (src[i * 4] * 0.299 + src[i * 4 + 1] * 0.587 + src[i * 4 + 2] * 0.114) / 255;
+    const at = (x, y) => {
+      if (wrap) { x = (x + W) % W; y = (y + H) % H; } else { x = clamp(x, 0, W - 1); y = clamp(y, 0, H - 1); }
+      return L[y * W + x];
+    };
+    const out = ctx.createImageData(W, H), o = out.data;
+    const s = strength * (W / 256);
+    for (let y = 0; y < H; y++) {
+      for (let x = 0; x < W; x++) {
         const tl = at(x - 1, y - 1), t = at(x, y - 1), tr = at(x + 1, y - 1);
         const l = at(x - 1, y), r = at(x + 1, y);
         const bl = at(x - 1, y + 1), b = at(x, y + 1), br = at(x + 1, y + 1);
@@ -136,19 +154,42 @@ function normalFrom(tex, strength = 2) {
         const i = (y * W + x) * 4;
         o[i] = (nx * 0.5 + 0.5) * 255; o[i + 1] = (ny * 0.5 + 0.5) * 255; o[i + 2] = (nz * 0.5 + 0.5) * 255; o[i + 3] = 255;
       }
-      ctx.putImageData(out, 0, 0);
-    } catch (e) {
-      ctx.fillStyle = 'rgb(128,128,255)'; ctx.fillRect(0, 0, W, H);
+      if ((y & 31) === 31) yield;
     }
-    byImg.set(strength, cv);
+    ctx.putImageData(out, 0, 0);
+  } catch (e) {
+    ctx.fillStyle = 'rgb(128,128,255)'; ctx.fillRect(0, 0, W, H);
   }
-  const nt = new THREE.CanvasTexture(cv);
+  return cv;
+}
+const runGen = (g) => { let r; do { r = g.next(); } while (!r.done); return r.value; };
+
+const normalCanvasCache = new Map(); // image -> Map(strength -> { source, wrap })
+const normalTexCache = new Map();    // tex.uuid|strength -> texture
+let maxAniso = 4;
+function normalFrom(tex, strength = 2) {
+  if (!tex) return null;
+  const key = tex.uuid + '|' + strength;
+  const hit = normalTexCache.get(key);
+  if (hit) return hit;
+  const img = tex.image;
+  let byImg = normalCanvasCache.get(img);
+  if (!byImg) { byImg = new Map(); normalCanvasCache.set(img, byImg); }
+  let ent = byImg.get(strength);
+  if (!ent) {
+    const wrap = tex.wrapS === THREE.RepeatWrapping;
+    ent = { source: new THREE.Source(runGen(normalGen(img, strength, wrap))), wrap };
+    byImg.set(strength, ent);
+  }
+  const nt = new THREE.CanvasTexture(ent.source.data);
+  nt.source = ent.source;
   nt.colorSpace = THREE.NoColorSpace;
   nt.wrapS = tex.wrapS; nt.wrapT = tex.wrapT;
   nt.repeat.copy(tex.repeat); nt.offset.copy(tex.offset);
   nt.center.copy(tex.center); nt.rotation = tex.rotation;
   nt.anisotropy = maxAniso;
   nt.needsUpdate = true;
+  trackTex(nt);
   normalTexCache.set(key, nt);
   return nt;
 }
@@ -171,10 +212,10 @@ function placeholderImage() {
   return cv;
 }
 
-async function loadTextures(renderer) {
+async function loadTextures() {
   const tex = {};
-  const names = Object.keys(ASSETS);
-  const imgs = await Promise.all(names.map((n) => loadImage(ASSETS[n])));
+  const names = Object.keys(PREVIEW);
+  const imgs = await Promise.all(names.map((n) => loadImage(PREVIEW[n])));
   names.forEach((n, i) => {
     const t = new THREE.Texture(imgs[i] || placeholderImage());
     t.colorSpace = THREE.SRGBColorSpace;
@@ -186,9 +227,35 @@ async function loadTextures(renderer) {
     else { t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping; }
     t.name = n;
     t.needsUpdate = true;
-    tex[n] = t;
+    tex[n] = trackTex(t);
   });
   return tex;
+}
+
+// Full-resolution images: hd/<name>.js files (each calls __gfHD(name, dataURL); plain scripts also work from
+// file://), fetched two at a time in priority order (first-scene textures first). Decoded images wait in hdReady.
+const hdReady = [];
+function streamHD() {
+  const names = Object.keys(HD);
+  if (!names.length) return;
+  window.__gfHD = (name, url) => {
+    if (typeof url !== 'string' || !HD[name]) return;
+    loadImage(url).then((img) => { if (img && img.naturalWidth) hdReady.push([name, img]); });
+  };
+  let i = 0, active = 0;
+  const next = () => {
+    while (active < 2 && i < names.length) {
+      const n = names[i++];
+      active++;
+      const s = document.createElement('script');
+      let fin = false;
+      const done = () => { if (fin) return; fin = true; active--; try { s.remove(); } catch (e) {} next(); };
+      s.onload = done; s.onerror = done;
+      s.src = 'hd/' + n + '.js?v=' + HD[n];
+      document.head.appendChild(s);
+    }
+  };
+  next();
 }
 
 function safeModule(name) {
@@ -211,6 +278,7 @@ async function boot() {
     renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance', alpha: false });
   } catch (e) { showFallback(e); return; }
   if (!renderer.getContext()) { showFallback('no context'); return; }
+  try { streamHD(); } catch (e) {}
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 1.05;
@@ -256,7 +324,7 @@ async function boot() {
   window.G = G;
   G.util.softDot = makeSoftDot();
   G.util.noiseTex = makeNoiseTex();
-  G.tex = await loadTextures(renderer);
+  G.tex = await loadTextures();
 
   // ---- save
   let saveData = {};
@@ -828,7 +896,7 @@ async function boot() {
     if (rawMs > 4 && rawMs < 250 && rawMs < binMin) binMin = rawMs;
     binT += dt;
     if (binT >= 1) { binT = 0; period = Math.min(binMin, prevMin); prevMin = binMin; binMin = 1e9; }
-    if (warm < 2 || rawMs > 250) return;
+    if (warm < 2 || rawMs > 250 || bgQuiet > 0) return;
     ftAvg += (rawMs - ftAvg) * 0.08;
     const base = Math.max(16.7, period);
     if (ftAvg > base * 1.4) {
@@ -847,21 +915,108 @@ async function boot() {
     } else { slowT = Math.max(0, slowT - dt); fastT = 0; }
   }
 
-  // ---- warm-up: compile every shader and upload every texture now, behind the fade-in, instead of the first
-  // time each object shows up (fire, ash, cut potato...), which stalls a frame or more on iOS.
-  try {
-    rig.update(0, 0);
-    renderer.compile(scene, camera);
-    const seen = new Set();
-    const up = (t) => { if (t && t.isTexture && !seen.has(t)) { seen.add(t); try { renderer.initTexture(t); } catch (e) {} } };
-    scene.traverse((o) => {
-      const ms = !o.material ? [] : Array.isArray(o.material) ? o.material : [o.material];
-      for (const m of ms) {
-        for (const k in m) up(m[k]);
-        if (m.uniforms) for (const k in m.uniforms) up(m.uniforms[k] && m.uniforms[k].value);
+  // ---- background work, a little per frame once the first scene is on screen:
+  //  1. swap in full-resolution textures as they arrive (hd/*.js), then rebuild their normal maps row by row;
+  //  2. compile the shaders that are not on screen yet (fire, smoke, ash, cut potatoes...) and upload their
+  //     textures, so those never stall a frame the first time they appear (iOS compiles/uploads synchronously).
+  // Heavy items wait while the finger is down (up to 2.5 s); frames right after one are kept out of `adapt`.
+  let bgQuiet = 0;
+  const bg = (() => {
+    const parallel = !!(renderer.extensions && renderer.extensions.has && renderer.extensions.has('KHR_parallel_shader_compile'));
+    const props = renderer.properties;
+    const sceneTex = new Set();
+    const uploadQ = [];
+    const normalJobs = [];
+    let toCompile = null, compileI = 0, linkQ = [], started = false, heldSince = -1;
+    const matsOf = (o) => (!o.material ? [] : Array.isArray(o.material) ? o.material : [o.material]);
+    const hasProg = (m) => { try { return !!props.get(m).currentProgram; } catch (e) { return true; } };
+    function start() {
+      started = true;
+      const add = (t) => { if (t && t.isTexture && !sceneTex.has(t)) { sceneTex.add(t); uploadQ.push(t); } };
+      toCompile = [];
+      scene.traverse((o) => {
+        const ms = matsOf(o);
+        if (!ms.length || !(o.isMesh || o.isPoints || o.isLine || o.isSprite)) return;
+        let need = false;
+        for (const m of ms) {
+          for (const k in m) add(m[k]);
+          if (m.uniforms) for (const k in m.uniforms) add(m.uniforms[k] && m.uniforms[k].value);
+          if (!hasProg(m)) need = true;
+        }
+        if (need) toCompile.push(o);
+      });
+    }
+    function applyHD(name, img) {
+      const t = G.tex[name];
+      if (!t || !t.source || t.source.data === img) return;
+      const oldImg = t.source.data;
+      const moved = swapSource(t.source, new THREE.Source(img));
+      if (moved) for (const u of moved) if (sceneTex.has(u)) uploadQ.push(u);
+      const byImg = normalCanvasCache.get(oldImg);
+      if (byImg) {
+        normalCanvasCache.delete(oldImg);
+        for (const [strength, ent] of byImg) normalJobs.push({ gen: normalGen(img, strength, ent.wrap), ent, img, strength });
       }
-    });
-  } catch (e) {}
+    }
+    function finishNormal(job, cv) {
+      let byNew = normalCanvasCache.get(job.img);
+      if (!byNew) { byNew = new Map(); normalCanvasCache.set(job.img, byNew); }
+      let ent = byNew.get(job.strength);
+      if (!ent) { ent = { source: new THREE.Source(cv), wrap: job.ent.wrap }; byNew.set(job.strength, ent); }
+      const moved = swapSource(job.ent.source, ent.source);
+      if (moved) for (const u of moved) if (sceneTex.has(u)) uploadQ.push(u);
+    }
+    function compileOne(o) {
+      const kids = o.children;
+      o.children = [];
+      try { renderer.compile(o, camera, scene); } catch (e) {}
+      o.children = kids;
+      if (!parallel) for (const m of matsOf(o)) linkQ.push(m);
+    }
+    return function step() {
+      if (!started) { start(); return; }
+      const t0 = performance.now();
+      const held = input.down;
+      if (held) { if (heldSince < 0) heldSince = t0; } else heldSince = -1;
+      const heavyOk = !held || t0 - heldSince > 2500;
+      if (bgQuiet > 0) bgQuiet--;
+      // 1. one texture swap per frame (its upload happens in this frame's render)
+      if (hdReady.length && heavyOk) {
+        const [n, img] = hdReady.shift();
+        try { applyHD(n, img); } catch (e) {}
+        bgQuiet = 2;
+        return;
+      }
+      // 2. full-size normal maps, ~3 ms of rows per frame
+      if (normalJobs.length) {
+        const job = normalJobs[0];
+        let r;
+        try { do { r = job.gen.next(); } while (!r.done && performance.now() - t0 < 3); } catch (e) { r = { done: true, value: null }; }
+        if (r.done) { normalJobs.shift(); if (r.value) finishNormal(job, r.value); bgQuiet = 2; }
+        return;
+      }
+      if (!heavyOk) return;
+      // 3. shaders: compile a few objects' programs, then (without parallel compile) make the driver finish linking
+      if (toCompile && compileI < toCompile.length) {
+        do { compileOne(toCompile[compileI++]); } while (compileI < toCompile.length && performance.now() - t0 < 4);
+        bgQuiet = 2;
+        return;
+      }
+      if (linkQ.length) {
+        do {
+          const m = linkQ.shift();
+          try { const p = props.get(m).currentProgram; if (p && p.getUniforms) p.getUniforms(); } catch (e) {}
+        } while (linkQ.length && performance.now() - t0 < 4);
+        bgQuiet = 2;
+        return;
+      }
+      // 4. texture uploads (no-op for ones already on the GPU at their current version)
+      if (uploadQ.length) {
+        do { try { renderer.initTexture(uploadQ.shift()); } catch (e) {} } while (uploadQ.length && performance.now() - t0 < 4);
+        bgQuiet = 2;
+      }
+    };
+  })();
 
   // ---- loop
   const order = ['story', 'world', 'leaves', 'fire', 'potato', 'audio'];
@@ -887,6 +1042,7 @@ async function boot() {
     if (!lost) {
       try { renderer.render(scene, camera); } catch (e) { if (!failed.render) { failed.render = 1; console.error(e); } }
       if (firstFrame) { firstFrame = false; canvas.classList.add('on'); }
+      else { try { bg(); } catch (e) { if (!failed.bg) { failed.bg = 1; console.error(e); } } }
     }
   }
   if (G.dev || /[?&]step\b/.test(location.search)) {
