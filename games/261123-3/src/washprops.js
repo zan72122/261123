@@ -137,7 +137,7 @@ function texFoam() {
   }
   const cc = fieldToCanvas(col, S, S, v => [v, v - 1, v - 4]);
   const alpha = fieldToCanvas(hf, S, S, (h, i) => { const a = 255 * clamp(islD[i * 4] / 255 + (h - 0.5) * 0.14, 0, 1); return [a, a, a]; });
-  const crown = fieldToCanvas(isl2, s2, s2, (v, i) => { const x = (i % s2) / (s2 / 2) - 1, y = Math.floor(i / s2) / (s2 / 2) - 1, d = Math.hypot(x, y); const a = 255 * clamp((1 - d) * 1.5, 0, 1) * clamp((v - 0.42) * 2.2 + (1 - d) * 0.55 + (r() - 0.5) * 0.5, 0, 1); return [a, a, a]; });
+  const crown = fieldToCanvas(isl2, s2, s2, (v, i) => { const x = (i % s2) / (s2 / 2) - 1, y = Math.floor(i / s2) / (s2 / 2) - 1, d = Math.hypot(x, y); const a = 255 * clamp((1 - d) * 1.5, 0, 1) * clamp((v - 0.3) * 2.4 + (1 - d) * 0.9 + (r() - 0.5) * 0.6, 0, 1); return [a, a, a]; });
   TEX.fo = { map: mkTex(cc, true, true), alpha: mkTex(alpha, false, true), normal: mkTex(heightToNormal(hf, S, S, 1.1), false, true), crown: mkTex(crown, false, false) };
   return TEX.fo;
 }
@@ -364,7 +364,8 @@ export function createFaucet(ctx) {
   const crownMats = [];
   for (let k = 0; k < 2; k++) {
     const a = ft.crown.clone(); a.needsUpdate = true; a.center.set(0.5, 0.5); if (k) a.repeat.set(-1, 1);
-    const m = new THREE.MeshStandardMaterial({ color: 0xf2f5f7, emissive: 0x3c4044, map: ft.map, alphaMap: a, transparent: true, depthWrite: false, roughness: 0.35, opacity: 0.9, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
+    const cm = ft.map.clone(); cm.needsUpdate = true; cm.repeat.set(0.12, 0.12);
+    const m = new THREE.MeshStandardMaterial({ color: 0xe6eef5, emissive: 0x3a4046, map: cm, alphaMap: a, transparent: true, depthWrite: false, roughness: 0.35, opacity: 0.9, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
     crownMats.push(m);
     const d = new THREE.Mesh(new THREE.CircleGeometry(1, 32), m); d.rotation.x = -Math.PI / 2; d.position.y = 0.0008 + k * 0.0004; d.renderOrder = 5; crownGroup.add(d);
   }
@@ -564,7 +565,7 @@ export function createBasin(ctx) {
   const rip = []; for (let i = 0; i < MAXR; i++) rip.push(new THREE.Vector4(0, 0, 99, 0));
   const wU = { uTime: { value: 0 }, uRip: { value: rip }, uAg: { value: 0 }, uMurkW: { value: 0 } };
   const waterMat = waterMaterial({
-    color: 0x1b4a52, opacity: 0.2, roughness: 0.03, env: 1.7, normalMap: texWaterN(), ns: 0.3, key: 'basinwater', uniforms: wU,
+    color: 0x1b4a52, opacity: 0.2, roughness: 0.03, env: 1.7, normalMap: texWaterN(), ns: 0.3, key: 'basinwater', fres: 0.6, uniforms: wU,
     head: `uniform float uTime, uAg, uMurkW; uniform vec4 uRip[${MAXR}]; varying float vEdge;`,
     patch: (sh) => {
       sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute float aEdge; varying float vEdge;')

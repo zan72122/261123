@@ -360,3 +360,20 @@ export function resetRound(ctx) {
   ctx.basin.setTilt(0); ctx.basin.setPour(0);
   applyShoeState(ctx);
 }
+
+// Dev/test helper: the state as it is when stage `id` begins (everything before it done the usual way).
+export const STAGE_ORDER = ['bag', 'fill', 'dunk', 'scrub', 'rinse', 'load', 'spin', 'hang', 'sun', 'pack', 'end'];
+export function presetState(id) {
+  const s = defaultState(), n = STAGE_ORDER.indexOf(id);
+  if (n > 0) s.pulled = 2;
+  if (n > 1) s.water.level = 0.75;
+  if (n > 2) { s.dunked = [true, true]; s.water.murk = 0.9; s.shoes[0].wet = s.shoes[1].wet = 1; }
+  if (n > 3) { s.scrubbed = [true, true]; s.shoes[0].dirt = s.shoes[1].dirt = 'clean'; s.water.murk = 1; s.water.foam = 0.6; }
+  if (n > 4) { s.dumped = true; s.rinse = 1; s.water.murk = 0; s.water.foam = 0; s.water.level = 0.8; }
+  if (n > 5) s.loaded = [true, true];
+  if (n > 6) { s.dry = 1; s.shoes[0].wet = s.shoes[1].wet = 0.35; }
+  if (n > 7) s.hung = [true, true];
+  if (n > 8) { s.shoes[0].wet = s.shoes[1].wet = 0; s.shoes[0].shine = s.shoes[1].shine = 1; }
+  if (n > 9) s.packed = [true, true];
+  return s;
+}
