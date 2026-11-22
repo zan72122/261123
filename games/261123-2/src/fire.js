@@ -131,16 +131,16 @@ export function create(G) {
         body = smoothstep(0.0, 0.75, body);
         float n3 = texture2D(uNoise, vec2(uv.x * 1.9 + vSeed * 3.1, y * 1.7 - uTime * 2.3)).r;
         float n4 = texture2D(uNoise, vec2(uv.x * 3.7 + vSeed * 1.7, y * 3.2 - uTime * 3.4)).r;
-        float er = (n3 * 0.7 + n4 * 0.3) * (0.15 + 1.1 * y);
+        float er = (n3 * 0.7 + n4 * 0.3) * (0.28 + 1.0 * y);
         float I = clamp(body * (1.15 - 0.4 * y) - er * 0.85, 0.0, 1.0);
         I *= smoothstep(0.0, 0.2, y + (n2 - 0.5) * 0.12);
         vec3 c = mix(vec3(0.38, 0.03, 0.0), vec3(1.0, 0.27, 0.03), smoothstep(0.04, 0.4, I));
         c = mix(c, vec3(1.0, 0.55, 0.14), smoothstep(0.42, 0.72, I));
         c = mix(c, vec3(1.0, 0.82, 0.5), smoothstep(0.78, 1.0, I));
         float core = exp(-x * x * 6.0) * (1.0 - smoothstep(0.05, 0.4, y)) * smoothstep(0.03, 0.15, y) * body;
-        c += vec3(1.0, 0.7, 0.35) * core * (0.12 + 0.35 * uHot);
+        c += vec3(1.0, 0.7, 0.35) * core * (0.12 + 0.2 * uHot);
         float a = smoothstep(0.03, 0.6, I) * vAmp * 0.8;
-        gl_FragColor = vec4(c * uBright * (0.85 + 0.3 * uHot), a);
+        gl_FragColor = vec4(c * uBright * (0.9 + 0.15 * uHot), a);
       }`,
     transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, fog: false, side: THREE.DoubleSide,
   });
@@ -383,13 +383,13 @@ export function create(G) {
     if (burst) {
       const a = rnd(0, 6.283), r = rnd(0, 0.05);
       S.P[i3] = x + Math.cos(a) * r; S.P[i3 + 1] = y + rnd(0, 0.03); S.P[i3 + 2] = z + Math.sin(a) * r;
-      S.V[i3] = Math.cos(a) * rnd(0.1, 0.3) * power; S.V[i3 + 1] = rnd(0.4, 0.8) * power; S.V[i3 + 2] = Math.sin(a) * rnd(0.1, 0.3) * power;
-      S.life[i] = rnd(1.0, 1.5); S.s0[i] = rnd(0.05, 0.09); S.s1[i] = rnd(0.2, 0.32) * Math.min(1.4, power); S.a0[i] = rnd(0.22, 0.32);
+      S.V[i3] = Math.cos(a) * rnd(0.15, 0.45) * power; S.V[i3 + 1] = rnd(0.45, 0.9) * power; S.V[i3 + 2] = Math.sin(a) * rnd(0.1, 0.3) * power;
+      S.life[i] = rnd(1.0, 1.5); S.s0[i] = rnd(0.06, 0.1); S.s1[i] = rnd(0.24, 0.38) * Math.min(1.4, power); S.a0[i] = rnd(0.16, 0.24);
       S.kind[i] = 1;
     } else {
       S.P[i3] = x + rnd(-0.025, 0.025); S.P[i3 + 1] = y + rnd(0, 0.01); S.P[i3 + 2] = z + rnd(-0.025, 0.025);
       S.V[i3] = rnd(-0.02, 0.02); S.V[i3 + 1] = rnd(0.25, 0.4); S.V[i3 + 2] = rnd(-0.02, 0.02);
-      S.life[i] = rnd(1.2, 2.0); S.s0[i] = rnd(0.025, 0.04); S.s1[i] = rnd(0.09, 0.15); S.a0[i] = rnd(0.24, 0.36);
+      S.life[i] = rnd(1.2, 2.0); S.s0[i] = rnd(0.035, 0.055); S.s1[i] = rnd(0.12, 0.2); S.a0[i] = rnd(0.45, 0.6);
     }
   }
   function steamAt(target, rate = 1) {
@@ -431,7 +431,7 @@ export function create(G) {
       }
       S.P[i3] += S.V[i3] * dt; S.P[i3 + 1] += S.V[i3 + 1] * dt; S.P[i3 + 2] += S.V[i3 + 2] * dt;
       const size = S.s0[i] + (S.s1[i] - S.s0[i]) * (1 - Math.pow(1 - p, 1.5));
-      const a = S.a0[i] * smooth(0, 0.15, p) * (1 - smooth(0.3, 1, p));
+      const a = S.a0[i] * smooth(0, S.kind[i] === 1 ? 0.06 : 0.25, p) * (1 - smooth(0.3, 1, p));
       const st = S.kind[i] === 1 ? 0 : size * (0.6 + 1.6 * p);
       S.out(i, S.P[i3], S.P[i3 + 1], S.P[i3 + 2], size, 0, 0.96, 0.97, 0.98, a, S.V[i3] * st * 2, st, S.V[i3 + 2] * st * 2);
     }
@@ -498,7 +498,7 @@ export function create(G) {
     gripGeo.scale(0.78, 1.18, 1);
     gripGeo.translate(0, 0, GRIP_BACK);
     gripGeo.computeVertexNormals();
-    const plastic = new THREE.MeshStandardMaterial({ color: 0x9a2a22, roughness: 0.38, metalness: 0.0 });
+    const plastic = new THREE.MeshStandardMaterial({ color: 0x7e231e, roughness: 0.42, metalness: 0.0 });
     const grip = new THREE.Mesh(gripGeo, plastic);
     // trigger + safety slider + collar (black plastic, merged)
     const trig = new THREE.BoxGeometry(0.008, 0.016, 0.022, 1, 1, 1); trig.translate(0, -0.019, 0.052);
@@ -547,7 +547,9 @@ export function create(G) {
         const dir = tmpV2.set(tmpV.x, -0.24, tmpV.z).normalize();
         tmpM.lookAt(tmpV3.set(0, 0, 0), dir, UPV);
         st.q.setFromRotationMatrix(tmpM);
-        st.target.set(px + tmpV.x * 0.07, Math.max(0.05, (point.y || 0) + 0.12), pz + tmpV.z * 0.07);
+        const rr = Math.hypot(px - ctr.x, pz - ctr.z);
+        const overStones = 0.09 * smooth(0.5, 0.68, rr) * (1 - smooth(0.95, 1.1, rr)); // clear the ring stones
+        st.target.set(px + tmpV.x * 0.07, Math.max(0.05, (point.y || 0) + 0.12 + overStones), pz + tmpV.z * 0.07);
         const first = st.mode !== 'held';
         st.mode = 'held';
         if (first) { // first frame must already move
@@ -630,11 +632,11 @@ export function create(G) {
     // paper texture
     const paper = canvasTex(512, (ctx, S) => {
       const toC = (x, y) => [((x + RX) / (2 * RX)) * S, (1 - (y - minY) / (maxY - minY)) * S];
-      ctx.fillStyle = '#ece6d6'; ctx.fillRect(0, 0, S, S);
+      ctx.fillStyle = '#bdb39d'; ctx.fillRect(0, 0, S, S);
       // fibres
-      for (let k = 0; k < 900; k++) {
+      for (let k = 0; k < 1400; k++) {
         const x = Math.random() * S, y = Math.random() * S, l = rnd(6, 26), a = rnd(0, 6.283);
-        ctx.strokeStyle = Math.random() < 0.55 ? `rgba(255,255,250,${rnd(0.08, 0.22)})` : `rgba(150,128,96,${rnd(0.04, 0.1)})`;
+        ctx.strokeStyle = Math.random() < 0.55 ? `rgba(250,246,236,${rnd(0.12, 0.3)})` : `rgba(130,110,80,${rnd(0.06, 0.14)})`;
         ctx.lineWidth = rnd(0.5, 1.3);
         ctx.beginPath(); ctx.moveTo(x, y);
         ctx.quadraticCurveTo(x + Math.cos(a + 0.6) * l * 0.5, y + Math.sin(a + 0.6) * l * 0.5, x + Math.cos(a) * l, y + Math.sin(a) * l);
@@ -651,7 +653,7 @@ export function create(G) {
       ctx.save();
       ctx.globalCompositeOperation = 'multiply';
       const g = ctx.createLinearGradient(0, S, 0, S * 0.52);
-      g.addColorStop(0, 'rgba(40,64,118,0.92)'); g.addColorStop(0.35, 'rgba(62,92,146,0.72)');
+      g.addColorStop(0, 'rgba(30,52,104,0.95)'); g.addColorStop(0.35, 'rgba(50,80,136,0.8)');
       g.addColorStop(0.75, 'rgba(110,140,186,0.28)'); g.addColorStop(1, 'rgba(160,180,210,0)');
       ctx.fillStyle = g; ctx.fillRect(0, S * 0.5, S, S * 0.5);
       for (let k = 0; k < 40; k++) {
@@ -667,7 +669,7 @@ export function create(G) {
       for (let k = 0; k < NR; k++) {
         const a = Math.PI * (0.03 + 0.94 * (k / (NR - 1)));
         const ex = jx + Math.cos(a) * S * 1.2, ey = jy - Math.sin(a) * S * 1.2;
-        ctx.strokeStyle = 'rgba(92,74,50,0.26)'; ctx.lineWidth = 2.2;
+        ctx.strokeStyle = 'rgba(92,74,50,0.38)'; ctx.lineWidth = 2.4;
         ctx.beginPath(); ctx.moveTo(jx, jy); ctx.lineTo(ex, ey); ctx.stroke();
         ctx.strokeStyle = 'rgba(255,255,248,0.16)'; ctx.lineWidth = 1.2;
         ctx.beginPath(); ctx.moveTo(jx + 1.6, jy + 0.5); ctx.lineTo(ex + 1.6, ey + 0.5); ctx.stroke();
@@ -686,8 +688,8 @@ export function create(G) {
     paper.colorSpace = THREE.SRGBColorSpace;
     paper.anisotropy = 4;
     const faceMat = new THREE.MeshStandardMaterial({
-      map: paper, side: THREE.DoubleSide, roughness: 0.88, metalness: 0,
-      emissive: 0xfff2dc, emissiveMap: paper, emissiveIntensity: 0.07,
+      map: paper, side: THREE.DoubleSide, roughness: 0.92, metalness: 0,
+      emissive: 0xfff2dc, emissiveMap: paper, emissiveIntensity: 0.025,
     });
     const face = new THREE.Mesh(faceGeo, faceMat);
     // bamboo: handle + bow ("window") + a central spine on the back
@@ -811,7 +813,7 @@ export function create(G) {
       const fl = 0.78 + 0.22 * Math.sin(t * 3.1 * s.sp + s.ph) * Math.sin(t * 1.7 * s.sp + s.ph * 1.7)
         + 0.12 * Math.sin(t * 7.3 * s.sp + s.ph * 2.3);
       const lvl = 0.3 + 0.7 * clamp(show, 0, 1);
-      const h = s.h * lvl * (0.45 + 0.55 * amp) * fl * (1 + 0.35 * w) * (show < 0.25 ? 0.75 : 1);
+      const h = 1.25 * s.h * lvl * (0.45 + 0.55 * amp) * fl * (1 + 0.35 * w) * (show < 0.25 ? 0.75 : 1);
       const wd = s.w * (0.55 + 0.45 * lvl) * (0.6 + 0.4 * amp);
       fPos[n * 3] = x; fPos[n * 3 + 1] = Math.max(0, domeY); fPos[n * 3 + 2] = z;
       fPar[n * 4] = wd; fPar[n * 4 + 1] = h; fPar[n * 4 + 2] = s.seed; fPar[n * 4 + 3] = amp * (0.75 + 0.25 * fl) * (0.8 + 0.25 * w);
@@ -852,7 +854,7 @@ export function create(G) {
     setWind(k) { windT = clamp(+k || 0, 0, 1); },
     setBaseY(y) { baseYT = clamp(+y || 0, 0, 0.8); },
     sparks(pos, n = 10, power = 1) { safe(() => sparks(pos, n, power)); },
-    ashPuff(pos, power = 1) { safe(() => ashPuff(pos, power)); audio('ashPuff'); },
+    ashPuff(pos, power = 1) { safe(() => ashPuff(pos, power)); },
     steamAt(target, rate = 1) { return steamAt(target, rate); },
     steamBurst(pos, power = 1) { safe(() => steamBurst(pos, power)); },
     smokeFace() { safe(smokeFace); },

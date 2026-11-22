@@ -91,6 +91,15 @@ function mergeGeos(list) {
   return out;
 }
 
+// desaturate / tint the sampled albedo map (kills lichen "eyes", tames vivid moss)
+function tweakMap(mat, desat, key, extra = '') {
+  mat.onBeforeCompile = (sh) => {
+    sh.fragmentShader = sh.fragmentShader.replace('#include <map_fragment>',
+      '#include <map_fragment>\n{ float l_ = dot(diffuseColor.rgb, vec3(0.3, 0.59, 0.11)); diffuseColor.rgb = mix(diffuseColor.rgb, vec3(l_), ' + desat.toFixed(3) + '); }\n' + extra);
+  };
+  mat.customProgramCacheKey = () => key;
+}
+
 const lerp = (a, b, t) => a + (b - a) * t;
 const clamp01 = (x) => (x < 0 ? 0 : x > 1 ? 1 : x);
 const sstep = (e0, e1, x) => { const t = clamp01((x - e0) / (e1 - e0)); return t * t * (3 - 2 * t); };
@@ -126,20 +135,21 @@ export function create(G) {
     gndCol: [[0.62, 0.50, 0.36], [0.62, 0.46, 0.32], [0.64, 0.42, 0.30]],
     hemiI: [1.25, 1.12, 1.15],
     envI: [0.65, 0.55, 0.5],
-    bg: [[0.74, 0.80, 0.86], [0.86, 0.76, 0.62], [0.88, 0.62, 0.50]],
-    fog: [[0.58, 0.55, 0.46], [0.62, 0.52, 0.40], [0.62, 0.46, 0.38]],
+    // sRGB
+    bg: [[0.70, 0.76, 0.82], [0.80, 0.72, 0.60], [0.84, 0.62, 0.52]],
+    fog: [[0.47, 0.43, 0.37], [0.50, 0.42, 0.33], [0.50, 0.38, 0.32]],
     wall: [[0.98, 0.97, 0.94], [0.98, 0.84, 0.66], [0.88, 0.66, 0.54]],
   };
   const tmpC = new THREE.Color();
   function keyNum(arr, k) { return k < 0.5 ? lerp(arr[0], arr[1], k * 2) : lerp(arr[1], arr[2], (k - 0.5) * 2); }
-  function keyCol(arr, k, out) {
+  function keyCol(arr, k, out, srgb) {
     const a = k < 0.5 ? arr[0] : arr[1], b = k < 0.5 ? arr[1] : arr[2], t = k < 0.5 ? k * 2 : (k - 0.5) * 2;
-    return out.setRGB(lerp(a[0], b[0], t), lerp(a[1], b[1], t), lerp(a[2], b[2], t));
+    return out.setRGB(lerp(a[0], b[0], t), lerp(a[1], b[1], t), lerp(a[2], b[2], t), srgb ? THREE.SRGBColorSpace : undefined);
   }
 
   // ---------------------------------------------------------------- sky, fog
-  scene.background = new THREE.Color().setRGB(...KEYS.bg[0]);
-  scene.fog = new THREE.Fog(new THREE.Color().setRGB(...KEYS.fog[0]), 6.5, 30);
+  scene.background = keyCol(KEYS.bg, 0, new THREE.Color(), true);
+  scene.fog = new THREE.Fog(keyCol(KEYS.fog, 0, new THREE.Color(), true), 6.0, 34);
 
   // ---------------------------------------------------------------- lights
   const sunDir = new THREE.Vector3(-0.55, 0.70, -0.30).normalize();
@@ -258,55 +268,24 @@ export function create(G) {
           // slightly darker damp soil hugging the stones
           float ring = exp(-pow((length(vWXZ) - 0.80) / 0.13, 2.0));
           diffuseColor.rgb *= 1.0 - ring * 0.18;
+          // darker, damper garden bed along the fence
+          float bed = smoothstep(-6.7, -7.5, vWXZ.y) + smoothstep(7.4, 8.3, abs(vWXZ.x));
+          diffuseColor.rgb *= 1.0 - clamp(bed, 0.0, 1.0) * 0.35 * (0.7 + 0.6 * gn3);
           // packed earth around the tree base
           float tb = exp(-pow(length(vWXZ - vec2(-1.55, -2.30)) / 0.9, 2.0));
           diffuseColor.rgb *= 1.0 - tb * 0.15;
         `);
     };
-    groundMat.customProgramCacheKey = () => 'world-ground-v1';
+    groundMat.customProgramCacheKey = () => 'world-ground-v2';
     const ground = new THREE.Mesh(geo, groundMat);
     ground.receiveShadow = true;
     ground.name = 'ground';
     root.add(ground);
   }
 
-  // leaf-litter patches (soft-edged) under the tree and along the far garden edge
-  {
-    const rnd = mulberry(77);
-    const patches = [
-      [-1.55, -2.30, 2.3], [-2.6, -2.9, 2.0], [-0.4, -3.4, 1.8],
-      [-4.5, -6.6, 3.0], [-1.6, -7.3, 2.6], [1.6, -7.2, 2.8], [4.6, -6.4, 3.0], [-6.4, -4.4, 2.6], [6.4, -4.2, 2.6],
-      [3.1, -3.4, 1.6], [-3.6, 0.6, 1.8], [3.7, 0.9, 1.7],
-    ];
-    const geos = [];
-    for (const [x, z, s] of patches) {
-      const g = new THREE.PlaneGeometry(s, s * (0.7 + rnd() * 0.3), 1, 1);
-      g.rotateX(-Math.PI / 2);
-      g.rotateY(rnd() * Math.PI);
-      g.translate(x, 0.003 + rnd() * 0.002, z);
-      // uv2-ish trick: map repeat comes from a scaled copy; keep uv 0..1 for the soft alpha
-      geos.push(g);
-    }
-    const geo = mergeGeos(geos.map((g) => { g.deleteAttribute('normal'); g.computeVertexNormals(); return g; }));
-    if (tex.leaflitter && U.softDot) {
-      const map = tex.leaflitter.clone();
-      map.wrapS = map.wrapT = THREE.RepeatWrapping;
-      map.repeat.set(2.2, 2.2);
-      map.needsUpdate = true;
-      const mat = new THREE.MeshStandardMaterial({
-        map, alphaMap: U.softDot, transparent: true, depthWrite: false, roughness: 0.9, metalness: 0,
-        color: new THREE.Color(0.82, 0.78, 0.72), polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1,
-      });
-      const m = new THREE.Mesh(geo, mat);
-      m.receiveShadow = true;
-      m.renderOrder = -1;
-      root.add(m);
-    }
-  }
-
   // sparse scattered single leaves far outside the play area
   if (tex.leaves) {
-    const N = 56;
+    const N = 190;
     const rnd = mulberry(4242);
     const g = new THREE.PlaneGeometry(1, 1, 2, 2);
     g.rotateX(-Math.PI / 2);
@@ -327,13 +306,15 @@ export function create(G) {
     while (n < N && guard++ < 5000) {
       // biased toward the back and the tree
       let x, z;
-      if (rnd() < 0.35) { const a = rnd() * Math.PI * 2, r = 0.5 + rnd() * 1.8; x = -1.55 + Math.cos(a) * r; z = -2.3 + Math.sin(a) * r; }
-      else { x = (rnd() * 2 - 1) * 6; z = -7.5 + rnd() * 9.5; }
+      const pick = rnd();
+      if (pick < 0.30) { const a = rnd() * Math.PI * 2, r = 0.45 + Math.pow(rnd(), 1.5) * 2.2; x = -1.55 + Math.cos(a) * r; z = -2.3 + Math.sin(a) * r; }
+      else if (pick < 0.55) { x = (rnd() * 2 - 1) * 7.5; z = -7.5 + Math.pow(rnd(), 1.6) * 1.6; }
+      else { x = (rnd() * 2 - 1) * 6.5; z = -7.8 + rnd() * 10; }
       const ex = x / 1.30, ez = (z - 0.05) / 1.45;
       if (ex * ex + ez * ez < 1.45) continue; // keep the play area clear
       if (Math.hypot(x, z) < 2.0) continue;
       if (Math.hypot(x + 1.55, z + 2.3) < 0.62) continue; // not inside the trunk
-      if (Math.hypot(x, z) > 8.0) continue;
+      if (z < -7.5 || Math.abs(x) > 8.2) continue;
       const sz = 0.11 + rnd() * 0.06;
       e.set((rnd() - 0.5) * 0.25, rnd() * Math.PI * 2, (rnd() - 0.5) * 0.25);
       q.setFromEuler(e);
@@ -343,7 +324,7 @@ export function create(G) {
       im.setMatrixAt(n, m4);
       const c = Math.floor(rnd() * 6);
       cell[n * 2] = (c % 3) / 3; cell[n * 2 + 1] = c < 3 ? 0.5 : 0;
-      const b = 0.72 + rnd() * 0.22;
+      const b = 0.55 + rnd() * 0.3;
       im.setColorAt(n, col.setRGB(b, b * (0.92 + rnd() * 0.08), b * (0.85 + rnd() * 0.1)));
       n++;
     }
@@ -356,19 +337,41 @@ export function create(G) {
   // ---------------------------------------------------------------- backdrop
   let backdropMat = null;
   {
-    const R = 8.5, SPAN = THREE.MathUtils.degToRad(172), H = 4.25, Y0 = -0.12;
-    const geo = new THREE.CylinderGeometry(R, R, H, 72, 6, true, Math.PI - SPAN / 2, SPAN);
-    geo.translate(0, Y0 + H / 2, 0);
-    const pos = geo.attributes.position, uv = geo.attributes.uv;
-    const arc = R * SPAN;
+    // rounded "U": straight back fence (projects as a straight line), quarter arcs, sides coming forward
+    const ZB = -7.6, XS = 8.4, RC = 3.0, H = 3.95, Y0 = -0.12;
+    const path = [];
+    const pushSeg = (x0, z0, x1, z1, n) => { for (let i = 0; i < n; i++) path.push([lerp(x0, x1, i / n), lerp(z0, z1, i / n)]); };
+    pushSeg(-XS, 1.8, -XS, ZB + RC, 6);
+    for (let i = 0; i < 14; i++) { const a = Math.PI + (i / 14) * Math.PI / 2; path.push([-XS + RC + Math.cos(a) * RC, ZB + RC + Math.sin(a) * RC]); }
+    pushSeg(-XS + RC, ZB, XS - RC, ZB, 12);
+    for (let i = 0; i < 14; i++) { const a = -Math.PI / 2 + (i / 14) * Math.PI / 2; path.push([XS - RC + Math.cos(a) * RC, ZB + RC + Math.sin(a) * RC]); }
+    pushSeg(XS, ZB + RC, XS, 1.8, 6);
+    path.push([XS, 1.8]);
+    const len = [0];
+    for (let i = 1; i < path.length; i++) len[i] = len[i - 1] + Math.hypot(path[i][0] - path[i - 1][0], path[i][1] - path[i - 1][1]);
+    const total = len[len.length - 1];
     const tileW = 8.1; // metres per photo width (fence ≈ 1.8 m)
-    const uSpan = arc / tileW;
-    const V0 = 0.104; // crop the gravel band off the bottom of the photo
-    for (let i = 0; i < pos.count; i++) {
-      const u = uv.getX(i);
-      const y = pos.getY(i);
-      uv.setXY(i, 0.5 + (0.5 - u) * uSpan, V0 + ((y - Y0) / H) * (1 - V0));
+    const V0 = 0.158; // crop the gravel + sunny lawn strip off the bottom of the photo
+    const ROWS = 5, np = path.length;
+    const posA = new Float32Array(np * (ROWS + 1) * 3), uvA = new Float32Array(np * (ROWS + 1) * 2);
+    for (let r = 0; r <= ROWS; r++) {
+      for (let i = 0; i < np; i++) {
+        const k = r * np + i;
+        const y = Y0 + (r / ROWS) * H;
+        posA[k * 3] = path[i][0]; posA[k * 3 + 1] = y; posA[k * 3 + 2] = path[i][1];
+        uvA[k * 2] = 0.5 + (len[i] - total / 2) / tileW;
+        uvA[k * 2 + 1] = V0 + (r / ROWS) * (1 - V0);
+      }
     }
+    const idx = [];
+    for (let r = 0; r < ROWS; r++) for (let i = 0; i < np - 1; i++) {
+      const a0 = r * np + i, a1 = a0 + 1, b0 = a0 + np, b1 = b0 + 1;
+      idx.push(a0, a1, b1, a0, b1, b0);
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(posA, 3));
+    geo.setAttribute('uv', new THREE.BufferAttribute(uvA, 2));
+    geo.setIndex(idx);
     let map = null;
     if (tex.backdrop) {
       map = tex.backdrop.clone();
@@ -376,8 +379,8 @@ export function create(G) {
       map.wrapT = THREE.ClampToEdgeWrapping;
       map.needsUpdate = true;
     }
-    backdropMat = new THREE.MeshBasicMaterial({ map, side: THREE.BackSide, fog: false, toneMapped: false, color: new THREE.Color().setRGB(...KEYS.wall[0]) });
-    const bU = { uHaze: { value: new THREE.Color().setRGB(...KEYS.fog[0]) }, uHazeAll: { value: 0.10 }, uHazeBot: { value: 0.55 } };
+    backdropMat = new THREE.MeshBasicMaterial({ map, side: THREE.DoubleSide, fog: false, toneMapped: false, color: new THREE.Color().setRGB(...KEYS.wall[0]) });
+    const bU = { uHaze: { value: keyCol(KEYS.fog, 0, new THREE.Color(), true) }, uHazeAll: { value: 0.08 }, uHazeBot: { value: 0.30 } };
     backdropMat.userData.u = bU;
     backdropMat.onBeforeCompile = (sh) => {
       Object.assign(sh.uniforms, bU);
@@ -465,6 +468,7 @@ export function create(G) {
     if (tex.bark) { map = tex.bark.clone(); map.wrapS = map.wrapT = THREE.RepeatWrapping; map.needsUpdate = true; nmap = normalFrom(map, 3); }
     const mat = new THREE.MeshStandardMaterial({ map, normalMap: nmap, roughness: 0.92, metalness: 0, vertexColors: true, color: new THREE.Color(0.92, 0.9, 0.86) });
     if (nmap) mat.normalScale.set(1.4, 1.4);
+    tweakMap(mat, 0.5, 'world-bark-v1');
     const trunk = new THREE.Mesh(merged, mat);
     trunk.castShadow = true;
     trunk.receiveShadow = true;
@@ -501,9 +505,10 @@ export function create(G) {
     };
     // [limb index, t along limb, extra yaw (deg), length, tilt from horizontal (deg), droop (deg), mirror, shadowOnly]
     const SPEC = [
-      [0, 1.00, 8, 2.5, 28, 12, false, false],
+      [0, 0.85, 2, 2.5, 26, 8, false, false],
       [0, 0.55, -32, 1.8, 40, 6, true, false],
-      [1, 1.00, 10, 2.3, 22, 16, false, false],
+      [1, 1.00, -4, 2.3, 34, 27, false, false],
+      [0, 1.00, 30, 2.2, 38, 16, true, false],
       [1, 0.65, 48, 1.7, 46, 4, true, false],
       [2, 1.00, -6, 2.6, 30, 10, true, false],
       [2, 0.60, 30, 1.9, 52, -6, false, false],
@@ -567,18 +572,27 @@ export function create(G) {
     const gsum = gaps.reduce((x, y) => x + y, 0);
     for (let i = 0; i < N; i++) {
       const nz = makeNoise3(100 + i);
-      const sz = 0.09 + rnd() * 0.06; // half-size
-      const sx = sz * (1.05 + rnd() * 0.35), sy = sz * (0.62 + rnd() * 0.22), sz2 = sz * (0.85 + rnd() * 0.25);
-      const g = new THREE.SphereGeometry(1, 28, 18);
+      const sz = 0.10 + rnd() * 0.05; // half-size
+      const sx = sz * (1.15 + rnd() * 0.4), sy = sz * (0.62 + rnd() * 0.2), sz2 = sz * (0.8 + rnd() * 0.25);
+      const g = new THREE.SphereGeometry(1, 30, 20);
       const p = g.attributes.position;
-      const nf = 1.1 + rnd() * 0.8;
+      const nf = 0.9 + rnd() * 0.6;
+      // a few broken flat faces
+      const planes = [];
+      for (let f = 0; f < 4; f++) {
+        const th = rnd() * Math.PI * 2, ph = (rnd() - 0.3) * 1.2;
+        planes.push([Math.cos(th) * Math.cos(ph), Math.sin(ph), Math.sin(th) * Math.cos(ph), 0.72 + rnd() * 0.15]);
+      }
       for (let k = 0; k < p.count; k++) {
-        const x = p.getX(k), y = p.getY(k), z = p.getZ(k);
-        let d = 1 + nz(x * nf, y * nf, z * nf) * 0.22 + nz(x * 3.1, y * 3.1, z * 3.1) * 0.06 + nz(x * 7, y * 7, z * 7) * 0.015;
-        // flattish bottom and slightly flat facets
-        let yy = y * d;
-        if (yy < -0.55) yy = -0.55 + (yy + 0.55) * 0.3;
-        p.setXYZ(k, x * d * sx, yy * sy, z * d * sz2);
+        let x = p.getX(k), y = p.getY(k), z = p.getZ(k);
+        let d = 1 + nz(x * nf, y * nf, z * nf) * 0.30 + nz(x * 2.7, y * 2.7, z * 2.7) * 0.08 + nz(x * 8, y * 8, z * 8) * 0.018;
+        x *= d; y *= d; z *= d;
+        for (const pl of planes) {
+          const dd = x * pl[0] + y * pl[1] + z * pl[2] - pl[3];
+          if (dd > 0) { const s2 = dd * 0.85; x -= pl[0] * s2; y -= pl[1] * s2; z -= pl[2] * s2; }
+        }
+        if (y < -0.5) y = -0.5 + (y + 0.5) * 0.3;
+        p.setXYZ(k, x * sx, y * sy, z * sz2);
       }
       smoothNormals(g);
       const ang = a + (gaps[i] / gsum) * Math.PI;
@@ -606,13 +620,15 @@ export function create(G) {
       g.setAttribute('color', new THREE.BufferAttribute(col, 3));
       // uv: per-stone offset so they don't all look alike
       const uv = g.attributes.uv; const ou = rnd(), ov = rnd();
-      for (let k = 0; k < uv.count; k++) uv.setXY(k, uv.getX(k) * 1.6 + ou, uv.getY(k) * 0.9 + ov);
+      for (let k = 0; k < uv.count; k++) uv.setXY(k, uv.getX(k) * 3.4 + ou, uv.getY(k) * 1.8 + ov);
       parts.push(g);
     }
     const geo = mergeGeos(parts);
     let map = null, nmap = null;
     if (tex.stone) { map = tex.stone.clone(); map.wrapS = map.wrapT = THREE.RepeatWrapping; map.needsUpdate = true; nmap = normalFrom(map, 3); }
-    const mat = new THREE.MeshStandardMaterial({ map, normalMap: nmap, roughness: 0.9, metalness: 0, vertexColors: true, color: new THREE.Color(0.86, 0.84, 0.80) });
+    const mat = new THREE.MeshStandardMaterial({ map, normalMap: nmap, roughness: 0.9, metalness: 0, vertexColors: true, color: new THREE.Color(0.80, 0.74, 0.66) });
+    if (nmap) mat.normalScale.set(1.3, 1.3);
+    tweakMap(mat, 0.8, 'world-stone-v1');
     const stones = new THREE.Mesh(geo, mat);
     stones.castShadow = true; stones.receiveShadow = true;
     stones.name = 'stones';
@@ -672,7 +688,7 @@ export function create(G) {
     const innerStart = 13;
     for (let i = 0; i < pos.count; i++) {
       const j = i % np;
-      uv.setXY(i, uv.getX(i) * 13, arc[j] / 0.115);
+      uv.setXY(i, uv.getX(i) * 10, arc[j] / 0.15);
       const y = pos.getY(i);
       let c;
       if (j >= innerStart) c = lerp(0.45, 0.95, sstep(0.02, 0.125, y)); // inner: darker deep down
@@ -682,8 +698,8 @@ export function create(G) {
     g.setAttribute('color', new THREE.BufferAttribute(col, 3));
     let map = null, nmap = null;
     if (tex.weave) { map = tex.weave.clone(); map.wrapS = map.wrapT = THREE.RepeatWrapping; map.needsUpdate = true; nmap = normalFrom(map, 2.5); }
-    const mat = new THREE.MeshStandardMaterial({ map, normalMap: nmap, roughness: 0.78, metalness: 0, vertexColors: true, color: new THREE.Color(0.86, 0.80, 0.70), side: THREE.DoubleSide });
-    if (nmap) mat.normalScale.set(1.1, 1.1);
+    const mat = new THREE.MeshStandardMaterial({ map, normalMap: nmap, roughness: 0.78, metalness: 0, vertexColors: true, color: new THREE.Color(0.80, 0.68, 0.52), side: THREE.DoubleSide });
+    if (nmap) mat.normalScale.set(1.6, 1.6);
     const m = new THREE.Mesh(g, mat);
     m.castShadow = true; m.receiveShadow = true;
     m.name = 'basket';
@@ -722,9 +738,9 @@ export function create(G) {
     keyCol(KEYS.sunCol, k, sun.color);
     keyCol(KEYS.skyCol, k, hemi.color);
     keyCol(KEYS.gndCol, k, hemi.groundColor);
-    if (scene.background && scene.background.isColor) keyCol(KEYS.bg, k, scene.background);
-    if (scene.fog) keyCol(KEYS.fog, k, scene.fog.color);
-    if (backdropMat) { keyCol(KEYS.wall, k, backdropMat.color); keyCol(KEYS.fog, k, backdropMat.userData.u.uHaze.value); backdropMat.userData.u.uHazeAll.value = 0.10 + k * 0.06; }
+    if (scene.background && scene.background.isColor) keyCol(KEYS.bg, k, scene.background, true);
+    if (scene.fog) keyCol(KEYS.fog, k, scene.fog.color, true);
+    if (backdropMat) { keyCol(KEYS.wall, k, backdropMat.color); keyCol(KEYS.fog, k, backdropMat.userData.u.uHaze.value, true); backdropMat.userData.u.uHazeAll.value = 0.08 + k * 0.06; }
     if ('environmentIntensity' in scene) scene.environmentIntensity = keyNum(KEYS.envI, k);
   }
   applyTOD(0);
