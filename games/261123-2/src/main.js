@@ -439,6 +439,8 @@ async function boot() {
     const up = new THREE.Vector3(0, 1, 0), P = new THREE.Vector3();
     const corners = [new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3()];
     const look = new THREE.Vector3();
+    const fx = new Float32Array(5), fy = new Float32Array(5), fz = new Float32Array(5);
+    let solvedShift = 0, shift = 0, fromShift = 0, toShift = 0, appliedShift = NaN, applied9 = NaN;
 
     function solve(s, outPos, outTgt) {
       const t = s.target || [0, 0, 0];
@@ -462,10 +464,36 @@ async function boot() {
       corners[3].set(outTgt.x + fw / 2, 0, outTgt.z + fd / 2);
       corners[4].set(outTgt.x, outTgt.y + 0.2, outTgt.z);
       let dist = 0.6;
-      for (let i = 0; i < 5; i++) {
-        P.copy(corners[i]).sub(outTgt);
-        const z0 = P.dot(f), x = Math.abs(P.dot(r)), y = Math.abs(P.dot(u));
-        dist = Math.max(dist, x / tanH - z0, y / tanV - z0, 0.25 - z0);
+      solvedShift = 0;
+      const bottom = s.bottom === undefined ? null : (Array.isArray(s.bottom) ? (aspect < 1 ? s.bottom[0] : s.bottom[s.bottom.length - 1]) : s.bottom);
+      if (bottom === null || !isFinite(+bottom)) {
+        for (let i = 0; i < 5; i++) {
+          P.copy(corners[i]).sub(outTgt);
+          const z0 = P.dot(f), x = Math.abs(P.dot(r)), y = Math.abs(P.dot(u));
+          dist = Math.max(dist, x / tanH - z0, y / tanV - z0, 0.25 - z0);
+        }
+      } else {
+        // lens-shift fit: the rectangle fills the width and its near edge sits `bottom` (fraction of the
+        // screen height) above the bottom edge; the space left at the top shows the garden/tree.
+        const lo = -1 + 2 * clamp(+bottom, 0, 0.45), hi = 0.97;
+        const tv = tanV / 0.94;
+        for (let i = 0; i < 5; i++) { P.copy(corners[i]).sub(outTgt); fz[i] = P.dot(f); fx[i] = Math.abs(P.dot(r)); fy[i] = P.dot(u); }
+        let dmin = 0.3, dmax = 80;
+        for (let i = 0; i < 5; i++) dmin = Math.max(dmin, 0.25 - fz[i]);
+        const ok = (d) => {
+          let ymn = 1e9, ymx = -1e9;
+          for (let i = 0; i < 5; i++) {
+            const dep = d + fz[i];
+            if (fx[i] / (dep * tanH) > 1) return false;
+            const ny = fy[i] / (dep * tv);
+            if (ny < ymn) ymn = ny; if (ny > ymx) ymx = ny;
+          }
+          if (ymx - ymn > hi - lo) return false;
+          solvedShift = lo - ymn;
+          return true;
+        };
+        if (!ok(dmin)) { for (let k = 0; k < 40; k++) { const m = (dmin + dmax) / 2; if (ok(m)) dmax = m; else dmin = m; } ok(dmax); dist = dmax; }
+        else dist = dmin;
       }
       outPos.copy(dir).multiplyScalar(dist).add(outTgt);
       return fv;
@@ -475,17 +503,17 @@ async function boot() {
       try {
         if (!s) return;
         spec = s; api.current = s;
-        fromPos.copy(pos); fromTgt.copy(tgt); fromFov = fov;
-        toFov = solve(s, toPos, toTgt);
+        fromPos.copy(pos); fromTgt.copy(tgt); fromFov = fov; fromShift = shift;
+        toFov = solve(s, toPos, toTgt); toShift = solvedShift;
         dur = Math.max(0, +seconds || 0);
         tt = 0;
-        if (dur <= 0.001) { tt = 1; pos.copy(toPos); tgt.copy(toTgt); fov = toFov; }
+        if (dur <= 0.001) { tt = 1; pos.copy(toPos); tgt.copy(toTgt); fov = toFov; shift = toShift; }
       } catch (e) {}
     }
     function refit() {
       if (!spec) return;
-      toFov = solve(spec, toPos, toTgt);
-      if (tt >= 1) { pos.copy(toPos); tgt.copy(toTgt); fov = toFov; }
+      toFov = solve(spec, toPos, toTgt); toShift = solvedShift;
+      if (tt >= 1) { pos.copy(toPos); tgt.copy(toTgt); fov = toFov; shift = toShift; }
     }
     function nudge(a) { shake = clamp(shake + clamp(+a || 0, 0, 1), 0, 1.5); }
     function update(dt, t) {
@@ -495,6 +523,7 @@ async function boot() {
         pos.lerpVectors(fromPos, toPos, k);
         tgt.lerpVectors(fromTgt, toTgt, k);
         fov = lerp(fromFov, toFov, k);
+        shift = lerp(fromShift, toShift, k);
       }
       shake *= Math.exp(-5 * dt);
       const sa = shake * 0.012;
@@ -504,8 +533,11 @@ async function boot() {
         pos.z + 0.002 * Math.sin(t * 0.23 * 6.283 + 2.1) + sa * 0.5 * Math.sin(t * 29.3 + 2));
       look.copy(tgt);
       camera.lookAt(look);
-      if (Math.abs(camera.fov - fov) > 1e-4 || camera.aspect !== W / H) {
+      if (Math.abs(camera.fov - fov) > 1e-4 || camera.aspect !== W / H || shift !== appliedShift || camera.projectionMatrix.elements[9] !== applied9) {
         camera.fov = fov; camera.aspect = W / H; camera.updateProjectionMatrix();
+        // vertical lens shift (NDC units): moves the picture up/down without tilting the camera
+        if (shift !== 0) { camera.projectionMatrix.elements[9] -= shift; camera.projectionMatrixInverse.copy(camera.projectionMatrix).invert(); }
+        appliedShift = shift; applied9 = camera.projectionMatrix.elements[9];
       }
       camera.updateMatrixWorld();
     }
@@ -551,13 +583,13 @@ async function boot() {
     const skin = new THREE.Color(0xe7b08f);
     const fmat = new THREE.MeshStandardMaterial({
       color: skin, roughness: 0.55, metalness: 0, transparent: true, opacity: 0,
-      depthTest: false, depthWrite: false, emissive: new THREE.Color(0x5a3022), fog: false,
+      depthTest: true, depthWrite: true, emissive: new THREE.Color(0x5a3022), fog: false,
     });
     const nmat = new THREE.MeshStandardMaterial({
       color: new THREE.Color(0xf3d2c4), roughness: 0.25, metalness: 0, transparent: true, opacity: 0,
-      depthTest: false, depthWrite: false, emissive: new THREE.Color(0x4a3029), fog: false,
+      depthTest: true, depthWrite: false, emissive: new THREE.Color(0x4a3029), fog: false,
     });
-    const LEN = 0.07, RAD = 0.016;
+    const LEN = 0.078, RAD = 0.0092;
     const capG = new THREE.CapsuleGeometry(RAD, LEN - 2 * RAD, 8, 18);
     capG.translate(0, LEN / 2, 0);
     // slightly flatten the pad side & taper the tip a touch
@@ -565,7 +597,8 @@ async function boot() {
       const p = capG.attributes.position;
       for (let i = 0; i < p.count; i++) {
         const y = p.getY(i), tip = 1 - smooth(0, LEN * 0.55, y);
-        const s = 1 - 0.12 * tip;
+        const kn = Math.exp(-Math.pow((y - LEN * 0.42) / 0.006, 2)) + Math.exp(-Math.pow((y - LEN * 0.74) / 0.007, 2));
+        const s = (1 - 0.12 * tip) * (1 + 0.07 * kn) * (0.94 + 0.12 * smooth(0, LEN, y));
         p.setX(i, p.getX(i) * s);
         p.setZ(i, p.getZ(i) * (p.getZ(i) < 0 ? 0.86 * s : s));
       }
@@ -578,6 +611,21 @@ async function boot() {
     nMesh.scale.set(RAD * 0.72, RAD * 0.95, RAD * 0.22);
     nMesh.position.set(0, RAD * 1.15, RAD * 0.86);
     finger.add(fMesh); finger.add(nMesh);
+    // the rest of a pointing hand (curled fingers, thumb, back of hand, wrist) so it reads as a hand, not a blob.
+    // the hand is drawn last, on a cleared depth buffer, so its own parts occlude each other (no double blending).
+    fMesh.onBeforeRender = (r) => { r.clearDepth(); };
+    {
+      const part = (geo, px, py, pz, sx, sy, sz, rx = 0, ry = 0, rz = 0) => {
+        const m = new THREE.Mesh(geo, fmat); m.position.set(px, py, pz); m.scale.set(sx, sy, sz); m.rotation.set(rx, ry, rz);
+        m.renderOrder = 1002; m.frustumCulled = false; finger.add(m); return m;
+      };
+      const sph = new THREE.SphereGeometry(1, 20, 14);
+      const cap = new THREE.CapsuleGeometry(1, 2.6, 6, 14);
+      part(sph, 0.021, LEN + 0.030, -0.010, 0.036, 0.034, 0.021);            // back of the hand
+      for (let k = 0; k < 3; k++) part(sph, 0.014 + k * 0.0165, LEN + 0.004 - k * 0.003, -0.010, 0.0098 - k * 0.0006, 0.0125, 0.0115); // curled knuckles
+      part(cap, -0.012, LEN + 0.012, -0.016, 0.0088, 0.0088, 0.0088, 0.25, 0, 0.55); // thumb tucked alongside
+      part(new THREE.CylinderGeometry(0.75, 0.86, 1, 18), 0.023, LEN + 0.082, -0.011, 0.031, 0.062, 0.019); // wrist
+    }
     finger.visible = false; finger.frustumCulled = false;
     fMesh.frustumCulled = false; nMesh.frustumCulled = false;
     scene.add(finger);
@@ -650,7 +698,7 @@ async function boot() {
       const a = fAlpha * Math.min(1, alpha + (fHide ? 1 : 0));
       // scale to ~10 % of screen height
       const dist = Math.max(0.2, camera.position.distanceTo(fp));
-      const sc = 0.12 * 2 * dist * Math.tan(camera.fov * Math.PI / 360) / LEN;
+      const sc = 0.085 * 2 * dist * Math.tan(camera.fov * Math.PI / 360) / LEN;
       // orientation: axis from tip toward the player's hand (toward camera, up ~50 deg), slight lean to the right
       toCam.copy(camera.position).sub(fp); toCam.y = 0;
       if (toCam.lengthSq() < 1e-6) toCam.set(0, 0, 1);
@@ -667,7 +715,7 @@ async function boot() {
       finger.position.y += lift * 0.035 * sc + 0.002 - press * 0.0015 * sc;
       // tiny idle drift so it feels alive
       finger.position.x += Math.sin(t * 2.1) * 0.0015 * sc;
-      fmat.opacity = 0.55 * a; nmat.opacity = 0.5 * a;
+      fmat.opacity = 0.7 * a; nmat.opacity = 0.6 * a;
       finger.visible = a > 0.003;
     }
 
@@ -805,6 +853,23 @@ async function boot() {
       try { renderer.render(scene, camera); } catch (e) { if (!failed.render) { failed.render = 1; console.error(e); } }
       if (firstFrame) { firstFrame = false; canvas.classList.add('on'); }
     }
+  }
+  if (G.dev) {
+    // dev only: run n full update ticks without rendering (fast-forward slow headless runs)
+    G.devStep = (n = 1, sdt = 1 / 30) => {
+      const dt = clamp(+sdt || 1 / 30, 0, 0.05);
+      for (let k = 0; k < (n | 0); k++) {
+        G.time.dt = dt; G.time.t += dt;
+        inputFrame(dt);
+        for (let i = 0; i < order.length; i++) {
+          const m = G[order[i]];
+          if (!m || typeof m.update !== 'function') continue;
+          try { m.update(dt); } catch (e) { console.error('[devStep] ' + order[i], e); }
+        }
+        rig.update(dt, G.time.t); hint.update(dt, G.time.t);
+      }
+      return G.story && G.story.stage;
+    };
   }
   function pause() {
     if (paused) return;

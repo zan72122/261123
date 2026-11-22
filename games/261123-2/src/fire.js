@@ -480,7 +480,7 @@ export function create(G) {
 
   // ---------- lighter ----------
   const lighter = (() => {
-    const root = new THREE.Group(); root.name = 'lighter';
+    const root = new THREE.Group(); root.name = 'lighter'; root.scale.setScalar(1.4);
     // local frame: long axis along Z, tip toward −Z; trigger hangs down (−Y) when held; origin = mid-length
     const GRIP_BACK = 0.13, GRIP_FRONT = 0.02, TIP_Z = -0.13;
     // grip: lathe profile along the axis, oval cross-section
@@ -529,7 +529,7 @@ export function create(G) {
     const light = new THREE.PointLight(0xffa040, 0, 0.8, 2); scene.add(light);
     const tipLocal = new THREE.Vector3(0, 0, TIP_Z - 0.002);
     const backLocal = new THREE.Vector3(0, 0, GRIP_BACK);
-    const REST_Y = 0.0105; // half thickness when lying on its side
+    const REST_Y = 0.0105 * 1.4; // half thickness when lying on its side
     const restQ = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0, Math.PI / 2));
     root.position.set(LIGHTER_REST.x, REST_Y, LIGHTER_REST.z); root.quaternion.copy(restQ);
     const st = { mode: 'rest', att: 0, flame: 0, flameOn: false, target: new THREE.Vector3().copy(root.position), q: restQ.clone(), restYaw: 0, rockPh: 0 };
@@ -607,7 +607,7 @@ export function create(G) {
 
   // ---------- uchiwa ----------
   const uchiwa = (() => {
-    const root = new THREE.Group(); root.name = 'uchiwa';
+    const root = new THREE.Group(); root.name = 'uchiwa'; root.scale.setScalar(1.4);
     const OFF = 0.225; // local origin = middle of the overall length
     const RX = 0.125, RYT = 0.135, RYB = 0.105, CY = 0.28, JY = 0.18;
     // outline points (local, before offset)
@@ -702,7 +702,7 @@ export function create(G) {
     for (const m of [face, bamboo]) { m.castShadow = true; m.receiveShadow = true; root.add(m); }
     scene.add(root);
     const GRIP = new THREE.Vector3(0, 0.07 - OFF, 0); // where the hand holds it
-    const REST_Y = 0.008;
+    const REST_Y = 0.008 * 1.4;
     const restQ = new THREE.Quaternion().setFromEuler(new THREE.Euler(-Math.PI / 2, 0, 0));
     root.position.set(UCHIWA_REST.x, REST_Y, UCHIWA_REST.z);
     root.quaternion.copy(restQ);
@@ -760,7 +760,7 @@ export function create(G) {
           qT.setFromEuler(tmpE.set(-0.22, st.yaw, st.roll, 'YXZ'));
           root.quaternion.slerp(qT, 1 - Math.exp(-30 * dt));
           // centre target (0.22 high), positioned via the grip so it pivots at the hand
-          posT.set(st.x, 0.22, 0.95);
+          posT.set(st.x, 0.26, 1.08);
           tmpV.copy(GRIP).applyQuaternion(root.quaternion);
           const hand = tmpV2.set(posT.x, posT.y + GRIP.y, posT.z); // hand location
           tmpV3.copy(hand).sub(tmpV);

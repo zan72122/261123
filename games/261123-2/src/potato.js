@@ -159,8 +159,8 @@ export function create(G) {
   const _a = new V3(), _b = new V3(), _c = new V3(), _d = new V3(), _T = new V3(), _N = new V3(), _B = new V3();
   function makeShape(seed, scale) {
     const r = rng(seed);
-    const L = lerp(0.16, 0.22, r()) * scale;
-    const R = L / (2 * lerp(2.9, 3.35, r()));
+    const L = lerp(0.20, 0.25, r()) * scale;
+    const R = L / (2 * lerp(2.55, 2.95, r()));
     const bend = (7 + 9 * r()) * PI / 180;
     const phi = r() * TAU;
     const bdir = new V3(0, Math.cos(phi), Math.sin(phi));
@@ -699,7 +699,7 @@ export function create(G) {
       pots = [];
       for (let k = 0; k < 3; k++) {
         const seed = (r() * 4294967295) >>> 0;
-        pots.push(makePotato(k, seed, k === big ? 1.5 : 1, vars[k]));
+        pots.push(makePotato(k, seed, k === big ? 1.35 : 1, vars[k]));
         const c = rawMats[k].color;
         if (skinTex) c.setRGB(0.3 + r() * 0.04, 0.24 + r() * 0.04, 0.27 + r() * 0.04);
         roastMats[k].userData.u.uDust.value = 0;

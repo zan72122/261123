@@ -41,7 +41,7 @@ export function create(G) {
   try { if (G.util && G.util.normalFrom && TEX.leaflitter) litterNormal = G.util.normalFrom(texLitter, 2.5); } catch (e) { litterNormal = null; }
 
   // ---------------------------------------------------------------- layout / anchors
-  const ELL = { cx: 0, cz: 0.05, rx: 1.30, rz: 1.45 };
+  const ELL = { cx: 0, cz: -0.25, rx: 1.35, rz: 1.75 };
   const ABSORB_R = 0.62;
   const SHELF_R = 0.32;
   const shelf = [new THREE.Vector3(-0.62, 0, 1.22), new THREE.Vector3(0.62, 0, 1.22)];
@@ -180,7 +180,7 @@ reflectedLight.indirectDiffuse += diffuseColor.rgb * uGlow * vec3(1.0,0.8,0.55);
   const HIDE = new THREE.Matrix4().compose(new THREE.Vector3(0, -50, 0), new THREE.Quaternion(), new THREE.Vector3(1e-4, 1e-4, 1e-4));
 
   // ---------------------------------------------------------------- loose leaves
-  const LCAP = 260;
+  const LCAP = 340;
   const looseGeo = makeLeafGeo(LCAP);
   const loose = new THREE.InstancedMesh(looseGeo, leafMat, LCAP);
   loose.customDepthMaterial = leafDepth;
@@ -227,7 +227,7 @@ reflectedLight.indirectDiffuse += diffuseColor.rgb * uGlow * vec3(1.0,0.8,0.55);
     makeCurl(lCurlA.array, i * 3, cell);
     const cu = lCurlA.array;
     lcup[i] = 0.25 * (Math.abs(cu[i * 3]) + Math.abs(cu[i * 3 + 1]) + Math.abs(cu[i * 3 + 2]));
-    ls[i] = 0.17 - Math.pow(Math.random(), 1.6) * 0.05;
+    ls[i] = 0.20 - Math.pow(Math.random(), 1.6) * 0.06;
     attrDirty = true;
   }
   function placeRest(i, x, z) {
@@ -301,7 +301,7 @@ bc = mix(bc, bc*vec3(0.55,0.40,0.28), smoothstep(0.0, 0.55, uBurn)*0.7);
 vec3 charC = vec3(0.030,0.026,0.022)*(0.55 + 1.1*bn3);
 bc = mix(bc, charC, bChar);
 vec3 ashT = mix(texture2D(uAsh, bp*3.1).rgb, texture2D(uAsh, mat2(0.6,-0.8,0.8,0.6)*bp*2.3 + 0.4).rgb, 0.5);
-vec3 ashC = ashT * vec3(0.84,0.75,0.64) * (0.8 + 0.3*bn2);
+vec3 ashC = mix(vec3(dot(ashT, vec3(0.333))), ashT, 0.2) * vec3(0.74,0.66,0.56) * (0.7 + 0.6*bn2) * (0.75 + 0.5*bn1);
 float flake = smoothstep(0.64, 0.74, bn2) * (0.5 + 0.5*bn3);
 ashC = mix(ashC, charC*1.3, flake*0.9);
 ashC = mix(ashC, vec3(0.05,0.042,0.035)*(0.7+0.6*bn3), smoothstep(0.62, 0.98, br + (bn2-0.5)*0.4)*0.95);
@@ -462,7 +462,7 @@ roughnessFactor = mix(roughnessFactor, 1.0, max(bChar*0.6, bAsh));`)
     else makeTint(sBaseTint, o, cell);
     if (curl) { sBaseCurl[o] = curl[0]; sBaseCurl[o + 1] = curl[1]; sBaseCurl[o + 2] = curl[2]; }
     else makeCurl(sBaseCurl, o, cell);
-    sS[i] = scale || rnd(0.11, 0.17);
+    sS[i] = scale || rnd(0.13, 0.19);
     pCellA.needsUpdate = true;
   }
   // choose a slot for a new pile leaf. top=true: near the summit
@@ -587,14 +587,14 @@ roughnessFactor = mix(roughnessFactor, 1.0, max(bChar*0.6, bAsh));`)
   function scatter(n) {
     for (let i = 0; i < LCAP; i++) { lmode[i] = FREE; fSlot[i] = -1; hideLeaf(i); }
     n = clamp(n | 0, 0, LCAP);
-    const nc = 7 + ((Math.random() * 4) | 0);
+    const nc = 10 + ((Math.random() * 4) | 0);
     clusters = [];
-    for (let c = 0; c < nc; c++) { const s = randomSpot(0.85); clusters.push({ x: s.x, z: s.z, s: rnd(0.14, 0.28), w: rnd(0.5, 1.5) }); }
+    for (let c = 0; c < nc; c++) { const s = randomSpot(0.85); clusters.push({ x: s.x, z: s.z, s: rnd(0.24, 0.42), w: rnd(0.5, 1.5) }); }
     let wsum = 0; for (const c of clusters) wsum += c.w;
     for (let i = 0; i < n; i++) {
       let x = 0, z = 0, ok = false;
       for (let tries = 0; tries < 14 && !ok; tries++) {
-        if (Math.random() < 0.58) {
+        if (Math.random() < 0.36) {
           let r = Math.random() * wsum, c = clusters[0];
           for (const cc of clusters) { r -= cc.w; if (r <= 0) { c = cc; break; } }
           x = c.x + gauss() * c.s; z = c.z + gauss() * c.s * 0.9;
@@ -654,7 +654,7 @@ roughnessFactor = mix(roughnessFactor, 1.0, max(bChar*0.6, bAsh));`)
     try {
       opts = opts || {};
       readAnchors();
-      const defCount = lowQ() ? 130 : 210;
+      const defCount = lowQ() ? 190 : 300;
       const count = clamp(Math.round(fin(opts.count, defCount)), 0, LCAP + PCAP);
       const pileStart = clamp(fin(opts.pileStart, 0.10), 0, 1);
       clearFlights();
@@ -671,10 +671,15 @@ roughnessFactor = mix(roughnessFactor, 1.0, max(bChar*0.6, bAsh));`)
       const looseN = Math.min(LCAP, total - absorbed);
       burnK = 0; emberK = 0; moundU.uBurn.value = 0; moundU.uEmber.value = 0;
       randomizeLumps();
-      scatter(looseN);
+      // opts.rain = seconds: no loose leaves now; the round's leaves rain down from the canopy instead
+      // (they ARE the round's total, so pileFraction = absorbed / (pile start + rained leaves))
+      const rain = fin(opts.rain, 0);
+      if (rain > 0) total = Math.max(1, absorbed + looseN);
+      scatter(rain > 0 ? 0 : looseN);
       fillPile(absorbed);
       rakeRest();
       snapShape();
+      if (rain > 0) dropLeaves(looseN, rain);
     } catch (e) { if (G.dev) console.warn('leaves.reset', e); }
   }
   function restoreAcornsInPile(n) {
