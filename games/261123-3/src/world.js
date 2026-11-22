@@ -289,7 +289,7 @@ void main(){
   vec3 col = mix(hor, uZen, pow(hp, 0.38));
   col = mix(col, hor * 1.06, exp(-hp * 22.0) * 0.5);
   float sdp = max(sd, 0.0);
-  col += uGlow * (pow(sdp, 4.0) * 0.28 + pow(sdp, 40.0) * 0.6 + pow(sdp, 700.0) * 2.5) * (0.6 + 0.4 * exp(-hp * 4.0));
+  col += uGlow * (pow(sdp, 8.0) * 0.16 + pow(sdp, 48.0) * 0.5 + pow(sdp, 700.0) * 2.5) * (0.5 + 0.5 * exp(-hp * 5.0));
   if (h < 0.0) col = mix(hor * 0.85, uGround, smoothstep(0.0, -0.2, h));
   float cl = 0.0;
   if (h > 0.0) {
@@ -329,7 +329,7 @@ const RAW_KEYS = [
   { t: 0.00, sun: SUN_DIR.clone(), light: SUN_DIR.clone(), lc: 0xfff1dc, li: 2.7, hs: 0xbcd7ff, hg: 0x8a7f6c, hi: 0.3, exp: EXPOSURE, env: ENV_INTENSITY,
     zen: 0x134cc2, hor: 0x9cc2ec, anti: 0x6a9ee2, glow: 0xffeacc, sunc: 0xfff4e0, cLit: 0xffffff, cShade: 0xaebdd2, ground: 0x4a5a3a, gain: 1.25, disc: 30, stars: 0, moon: 0, cover: 0.6, fog: 0xbcd0e2 },
   { t: 0.30, sun: V(0.95, 0.21, 0.22), light: V(0.95, 0.22, 0.22), lc: 0xffc78a, li: 2.4, hs: 0xc4c8e0, hg: 0x8a7258, hi: 0.32, exp: 0.86, env: 0.42,
-    zen: 0x2c5cb4, hor: 0xffd7a0, anti: 0x9db2d4, glow: 0xffb468, sunc: 0xffd8a0, cLit: 0xffe4c0, cShade: 0x9c9cae, ground: 0x3e4530, gain: 1.2, disc: 26, stars: 0, moon: 0, cover: 0.6, fog: 0xd8c8b0 },
+    zen: 0x2458b8, hor: 0xf0c898, anti: 0x86a6d8, glow: 0xffa048, sunc: 0xffd8a0, cLit: 0xffe4c0, cShade: 0x9c9cae, ground: 0x3e4530, gain: 1.2, disc: 26, stars: 0, moon: 0, cover: 0.6, fog: 0xd8c8b0 },
   { t: 0.45, sun: V(0.99, 0.08, 0.10), light: V(0.99, 0.08, 0.10), lc: 0xff8a4c, li: 1.6, hs: 0xb894b4, hg: 0x6e5446, hi: 0.36, exp: 0.95, env: 0.3,
     zen: 0x34509a, hor: 0xff9658, anti: 0xd09cb6, glow: 0xff7a34, sunc: 0xffa060, cLit: 0xffa676, cShade: 0x8c6a86, ground: 0x30302a, gain: 1.15, disc: 18, stars: 0, moon: 0, cover: 0.6, fog: 0xc89a8a },
   { t: 0.52, sun: V(0.98, -0.12, 0.12), light: V(0.6, 0.6, 0.45), lc: 0x9c84c0, li: 0.3, hs: 0x6a70aa, hg: 0x3a3640, hi: 0.45, exp: 1.05, env: 0.18,
@@ -614,7 +614,7 @@ export function createWorld(ctx) {
     house(33, 13, 8, 7, 5.2, 1.4, 0xc9ced0, 0x6a5a50);
     house(-14, -1, 7, 8, 5.4, 1.5, 0xd3cbbd, 0x4c535b);
     const hm = new THREE.Mesh(mergeGeometries(walls), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9, metalness: 0 }));
-    const rm = new THREE.Mesh(mergeGeometries(roofs), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.7, metalness: 0.1, side: THREE.DoubleSide }));
+    const rm = new THREE.Mesh(mergeGeometries(roofs), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85, metalness: 0, side: THREE.DoubleSide }));
     hm.name = 'neighbourHouses'; rm.name = 'neighbourRoofs'; group.add(hm, rm);
   }
 
