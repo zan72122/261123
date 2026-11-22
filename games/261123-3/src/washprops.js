@@ -105,43 +105,42 @@ function texCaustic() {
     }
     f[y * S + x] = f2 - f1;
   }
-  return (TEX.ca = mkTex(fieldToCanvas(f, S, S, v => { const a = 255 * Math.pow(Math.max(0, 1 - v / 0.22), 2.2); return [a, a, a]; }), false, true));
+  return (TEX.ca = mkTex(fieldToCanvas(f, S, S, v => { const a = 255 * Math.pow(Math.max(0, 1 - v / 0.38), 2.0); return [a, a, a]; }), false, true));
 }
-// soap foam: color (sRGB), alpha (density field; shader thresholds it), normal (bubbles)
+// soap foam: color (sRGB), alpha (density field; shader thresholds it), normal (fine bubbles)
 function texFoam() {
   if (TEX.fo) return TEX.fo;
   const S = 512, r = mulberry(91);
-  const isl = fbmField(S, S, 41, 4, 4, 5, 0.58);
+  const isl = fbmField(S, S, 41, 3, 3, 6, 0.62);
   const cc = mkCanvas(S, S), cg = cc.getContext('2d');
   const hc = mkCanvas(S, S), hg = hc.getContext('2d');
-  cg.fillStyle = 'rgb(206,204,197)'; cg.fillRect(0, 0, S, S);
-  hg.fillStyle = '#000'; hg.fillRect(0, 0, S, S);
-  const N = 5200;
+  cg.fillStyle = 'rgb(236,235,231)'; cg.fillRect(0, 0, S, S);
+  hg.fillStyle = 'rgb(128,128,128)'; hg.fillRect(0, 0, S, S);
+  const N = 16000;
   for (let n = 0; n < N; n++) {
-    const x = r() * S, y = r() * S, v = isl[(y | 0) * S + (x | 0)];
-    if (v < 0.30 + r() * 0.25) continue;
-    const rad = 0.7 + Math.pow(r(), 3.2) * 9;
+    const x = r() * S, y = r() * S;
+    const rad = 0.5 + Math.pow(r(), 4) * 4.5;
     for (const ox of [-S, 0, S]) for (const oy of [-S, 0, S]) {
-      const X = x + ox, Y = y + oy; if (X < -12 || X > S + 12 || Y < -12 || Y > S + 12) continue;
-      const gr = cg.createRadialGradient(X - rad * 0.3, Y - rad * 0.3, 0, X, Y, rad);
-      gr.addColorStop(0, 'rgba(175,174,168,0.9)'); gr.addColorStop(0.7, 'rgba(200,199,193,0.9)'); gr.addColorStop(0.92, 'rgba(246,245,241,1)'); gr.addColorStop(1, 'rgba(160,158,152,0.6)');
-      cg.fillStyle = gr; cg.beginPath(); cg.arc(X, Y, rad, 0, TAU); cg.fill();
-      const hgr = hg.createRadialGradient(X, Y, 0, X, Y, rad);
-      hgr.addColorStop(0, 'rgba(255,255,255,0.9)'); hgr.addColorStop(0.8, 'rgba(255,255,255,0.6)'); hgr.addColorStop(1, 'rgba(255,255,255,0)');
-      hg.fillStyle = hgr; hg.beginPath(); hg.arc(X, Y, rad, 0, TAU); hg.fill();
+      const X = x + ox, Y = y + oy; if (X < -8 || X > S + 8 || Y < -8 || Y > S + 8) continue;
+      cg.fillStyle = `rgba(196,195,189,${0.35 + r() * 0.4})`; cg.beginPath(); cg.arc(X, Y, rad, 0, TAU); cg.fill();
+      if (rad > 1.2) { cg.strokeStyle = 'rgba(252,252,250,0.8)'; cg.lineWidth = 0.6; cg.beginPath(); cg.arc(X, Y, rad, 3.6, 5.4); cg.stroke(); }
+      hg.fillStyle = 'rgba(40,40,40,0.5)'; hg.beginPath(); hg.arc(X, Y, rad, 0, TAU); hg.fill();
+      hg.strokeStyle = 'rgba(230,230,230,0.6)'; hg.lineWidth = 0.7; hg.beginPath(); hg.arc(X, Y, rad, 0, TAU); hg.stroke();
     }
   }
   const hd = hg.getImageData(0, 0, S, S).data, hf = new Float32Array(S * S);
   for (let i = 0; i < S * S; i++) hf[i] = hd[i * 4] / 255;
-  const alpha = fieldToCanvas(isl, S, S, (v, i) => { const a = 255 * clamp(v * 0.9 + hf[i] * 0.16 - 0.04, 0, 1); return [a, a, a]; });
-  TEX.fo = { map: mkTex(cc, true, true), alpha: mkTex(alpha, false, true), normal: mkTex(heightToNormal(hf, S, S, 3.0), false, true) };
+  const alpha = fieldToCanvas(isl, S, S, (v, i) => { const a = 255 * clamp(v + (hf[i] - 0.5) * 0.14, 0, 1); return [a, a, a]; });
+  // radial "crown" alpha (impact froth), rotates about its centre
+  const crown = fieldToCanvas(isl, S, S, (v, i) => { const x = (i % S) / (S / 2) - 1, y = Math.floor(i / S) / (S / 2) - 1, d = Math.hypot(x, y); const a = 255 * clamp((1 - d) * 1.6, 0, 1) * clamp((v - 0.2) * 1.6 + (1 - d) * 0.7 + (hf[i] - 0.5) * 0.3, 0, 1); return [a, a, a]; });
+  TEX.fo = { map: mkTex(cc, true, true), alpha: mkTex(alpha, false, true), normal: mkTex(heightToNormal(hf, S, S, 1.6), false, true), crown: mkTex(crown, false, false) };
   return TEX.fo;
 }
 function texChromeRough() {
   if (TEX.cr) return TEX.cr;
   const S = 256, r = mulberry(13), c = mkCanvas(S, S), g = c.getContext('2d');
   const f = fbmField(S, S, 3, 4, 4, 4);
-  g.putImageData(fieldToCanvas(f, S, S, v => { const a = 26 + v * 26; return [a, a, a]; }).getContext('2d').getImageData(0, 0, S, S), 0, 0);
+  g.putImageData(fieldToCanvas(f, S, S, v => { const a = 18 + v * 22; return [a, a, a]; }).getContext('2d').getImageData(0, 0, S, S), 0, 0);
   for (let i = 0; i < 160; i++) { // dried water spots (rings)
     const x = r() * S, y = r() * S, rad = 1 + r() * 5;
     g.strokeStyle = `rgba(150,150,150,${0.25 + r() * 0.4})`; g.lineWidth = 0.6 + r(); g.beginPath(); g.arc(x, y, rad, 0, TAU); g.stroke();
@@ -235,7 +234,7 @@ function postTextures() {
   if (TEX.post) return TEX.post;
   const W = 128, H = 1024, r = mulberry(7);
   const f = fbmField(W, H, 17, 2, 16, 5, 0.55);
-  const c = fieldToCanvas(f, W, H, v => { const b = 128 + (v - 0.5) * 26; return [b, b * 0.985, b * 0.95]; });
+  const c = fieldToCanvas(f, W, H, v => { const b = 168 + (v - 0.5) * 30; return [b, b * 0.985, b * 0.955]; });
   const g = c.getContext('2d');
   for (let i = 0; i < 7000; i++) { // granite-like speckles (擬石)
     const x = r() * W, y = r() * H, s = r() < 0.85 ? 0.8 : 1.6, t = r();
@@ -285,7 +284,18 @@ export function createFaucet(ctx) {
   const collar = new THREE.Mesh(collarGeo, new THREE.MeshStandardMaterial({ color: 0x8a8780, roughness: 0.95 })); collar.receiveShadow = true; group.add(collar);
 
   // --- chrome tap ---
-  const chrome = new THREE.MeshStandardMaterial({ color: 0xe9ebee, metalness: 1, roughness: 1, roughnessMap: texChromeRough(), envMapIntensity: 1.6 });
+  const chrome = new THREE.MeshStandardMaterial({ color: 0xd2d5d9, metalness: 1, roughness: 1, roughnessMap: texChromeRough(), envMapIntensity: 1.25 });
+  chrome.onBeforeCompile = (sh) => { // fake surroundings in reflections: darker ground / horizon clutter -> contrasty chrome
+    sh.fragmentShader = sh.fragmentShader.replace('#include <lights_fragment_maps>', `#include <lights_fragment_maps>
+      #if defined( RE_IndirectSpecular )
+      { vec3 rW = inverseTransformDirection(reflect(-geometryViewDir, geometryNormal), viewMatrix);
+        float az = atan(rW.z, rW.x);
+        float k = mix(0.16, 1.0, smoothstep(-0.02, 0.32, rW.y + 0.05 * sin(az * 5.0)));
+        k *= 1.0 - 0.35 * smoothstep(0.0, 0.12, rW.y) * (1.0 - smoothstep(0.12, 0.3, rW.y)) * (0.5 + 0.5 * sin(az * 3.0 + 1.0));
+        radiance *= k; }
+      #endif`);
+  };
+  chrome.customProgramCacheKey = () => 'wash-chrome';
   chrome.roughnessMap.repeat.set(3, 3);
   mats.push(chrome);
   const add = (geo, mat, x, y, z, rx = 0, ry = 0, rz = 0, parent = group) => { const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); m.rotation.set(rx, ry, rz); m.castShadow = true; m.receiveShadow = true; parent.add(m); return m; };
@@ -335,7 +345,7 @@ export function createFaucet(ctx) {
   sGeo.setAttribute('position', new THREE.BufferAttribute(sPos, 3)); sGeo.setAttribute('uv', new THREE.BufferAttribute(sUV, 2)); sGeo.setIndex(sIdx);
   sGeo.setAttribute('normal', new THREE.BufferAttribute(new Float32Array(sPos.length), 3));
   const sN = texStreamN().clone(); sN.needsUpdate = true; sN.repeat.set(1, 1);
-  const streamMat = waterMaterial({ color: 0x8696a0, opacity: 0.16, roughness: 0.03, env: 2.2, normalMap: sN, ns: 0.55, key: 'stream' });
+  const streamMat = waterMaterial({ color: 0x4c5c64, opacity: 0.07, roughness: 0.02, env: 1.5, normalMap: sN, ns: 0.9, key: 'stream', fres: 0.8 });
   mats.push(streamMat);
   const stream = new THREE.Mesh(sGeo, streamMat); stream.frustumCulled = false; stream.renderOrder = 4; stream.visible = false; group.add(stream);
   // impact foam crown
@@ -343,8 +353,8 @@ export function createFaucet(ctx) {
   const crownGroup = new THREE.Group(); crownGroup.visible = false; group.add(crownGroup);
   const crownMats = [];
   for (let k = 0; k < 2; k++) {
-    const a = ft.alpha.clone(); a.needsUpdate = true; a.center.set(0.5, 0.5); a.repeat.set(0.35 + k * 0.2, 0.35 + k * 0.2);
-    const m = new THREE.MeshStandardMaterial({ color: 0xeeeee8, map: ft.map, alphaMap: a, transparent: true, depthWrite: false, roughness: 0.35, opacity: 0.9, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
+    const a = ft.crown.clone(); a.needsUpdate = true; a.center.set(0.5, 0.5); if (k) a.repeat.set(-1, 1);
+    const m = new THREE.MeshStandardMaterial({ color: 0xf4f3ef, emissive: 0x303030, map: ft.map, alphaMap: a, transparent: true, depthWrite: false, roughness: 0.35, opacity: 0.9, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
     crownMats.push(m);
     const d = new THREE.Mesh(new THREE.CircleGeometry(1, 32), m); d.rotation.x = -Math.PI / 2; d.position.y = 0.0008 + k * 0.0004; d.renderOrder = 5; crownGroup.add(d);
   }
@@ -414,11 +424,10 @@ export function createFaucet(ctx) {
       } else {
         // impact crown + splash
         crownGroup.visible = true; crownGroup.position.set(0, landLocal, TIP_Z);
-        const R = 0.012 + 0.03 * f;
+        const R = 0.016 + 0.026 * f;
         crownGroup.children[0].scale.setScalar(R); crownGroup.children[1].scale.setScalar(R * 0.75);
         crownMats[0].alphaMap.rotation = time * 1.7; crownMats[1].alphaMap.rotation = -time * 2.3;
-        crownMats[0].alphaMap.offset.set(Math.sin(time * 3) * 0.05, Math.cos(time * 2.6) * 0.05);
-        crownMats[0].opacity = 0.75 * smooth(0.1, 0.5, f); crownMats[1].opacity = 0.9 * smooth(0.1, 0.5, f);
+                crownMats[0].opacity = 0.75 * smooth(0.1, 0.5, f); crownMats[1].opacity = 0.9 * smooth(0.1, 0.5, f);
         const rb = r0 * Math.sqrt(v0 / Math.sqrt(v0 * v0 + 2 * 9.8 * fall));
         for (let i = 0; i < NLUMP; i++) {
           const s = lumpSeed[i], ph = time * 9 * s[3] + s[2], rr = rb * (1.2 + 2.2 * s[1]);
@@ -526,13 +535,13 @@ export function createBasin(ctx) {
         float inner = (vLN.y > 0.5 && vLP.y < 0.02) || dot(vLN.xz, vLP.xz) < 0.0 ? 1.0 : 0.0;
         inner *= step(rr, 0.2508) * step(0.0035, vLP.y);
         if (uWater > 0.5 && inner > 0.5 && wd > 0.0) {
-          vec3 absorb = mix(vec3(7.5, 2.2, 1.6), vec3(60.0, 64.0, 70.0), uMurk);
+          vec3 absorb = mix(vec3(5.0, 1.5, 1.1), vec3(60.0, 64.0, 70.0), uMurk);
           vec3 tr = exp(-absorb * (wd * 1.6 + 0.004));
           vec2 cp = vLP.xz * 7.0;
           float c1 = texture2D(uCaus, cp + vec2(uTime * 0.031, uTime * 0.017)).r;
           float c2 = texture2D(uCaus, cp * 1.31 + vec2(-uTime * 0.023, uTime * 0.029)).r;
-          float cs = (c1 * c2 * 2.6 + (c1 + c2) * 0.25) * (1.0 - uMurk) * smoothstep(0.0, 0.012, wd);
-          reflectedLight.directDiffuse *= tr * (0.72 + cs * 1.6);
+          float cs = (c1 * c2 * 1.3 + (c1 + c2) * 0.18) * (1.0 - uMurk) * smoothstep(0.0, 0.012, wd);
+          reflectedLight.directDiffuse *= tr * (0.8 + cs * 0.9);
           reflectedLight.indirectDiffuse *= tr * 0.92;
           reflectedLight.directSpecular *= tr * 0.25;
           reflectedLight.indirectSpecular *= tr * 0.3;
@@ -557,7 +566,7 @@ export function createBasin(ctx) {
   const rip = []; for (let i = 0; i < MAXR; i++) rip.push(new THREE.Vector4(0, 0, 99, 0));
   const wU = { uTime: { value: 0 }, uRip: { value: rip }, uAg: { value: 0 }, uMurkW: { value: 0 } };
   const waterMat = waterMaterial({
-    color: 0x0f3238, opacity: 0.12, roughness: 0.03, env: 1.7, normalMap: texWaterN(), ns: 0.3, key: 'basinwater', uniforms: wU,
+    color: 0x1b4a52, opacity: 0.2, roughness: 0.03, env: 1.7, normalMap: texWaterN(), ns: 0.3, key: 'basinwater', uniforms: wU,
     head: `uniform float uTime, uAg, uMurkW; uniform vec4 uRip[${MAXR}]; varying float vEdge;`,
     patch: (sh) => {
       sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute float aEdge; varying float vEdge;')
@@ -598,7 +607,7 @@ export function createBasin(ctx) {
     Object.assign(sh.uniforms, fU);
     sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute float aEdge; varying float vEdge;')
       .replace('#include <begin_vertex>', '#include <begin_vertex>\nvEdge = aEdge;');
-    const uvx = 'vec2 fuv = vec2(cos(uTime*0.03)*vMapUv.x - sin(uTime*0.03)*vMapUv.y, sin(uTime*0.03)*vMapUv.x + cos(uTime*0.03)*vMapUv.y) * 2.1 + vec2(uTime*0.004, uTime*0.003);';
+    const uvx = 'vec2 fuv = vec2(cos(uTime*0.03)*vMapUv.x - sin(uTime*0.03)*vMapUv.y, sin(uTime*0.03)*vMapUv.x + cos(uTime*0.03)*vMapUv.y) * 3.2 + vec2(uTime*0.004, uTime*0.003);';
     sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform float uTime, uFoam; varying float vEdge;')
       .replace('#include <map_fragment>', `${uvx}\n diffuseColor *= texture2D(map, fuv);`)
       .replace('#include <alphamap_fragment>', `
@@ -654,12 +663,12 @@ export function createBasin(ctx) {
   let level = 0, murk = 0, foamAmt = 0, tilt = 0, pour = 0, overflow = 0, time = 0, agit = 0, dirty = true, hasWater = false;
   let wetRing = 0, wetPuddle = 0, puddleR = 0.05, splashAcc = 0;
   const landing = new THREE.Vector3(0, 0, 0.5);
-  const cMurk = new THREE.Color(0x1b150f), cClear = new THREE.Color(0x0e3036), tmpC = new THREE.Color();
+  const cMurk = new THREE.Color(0x2e261d), cClear = new THREE.Color(0x1b4a52), tmpC = new THREE.Color();
 
   function rebuild() {
     dirty = false;
     const c = Math.cos(tilt), s = Math.sin(tilt);
-    const hc = B.FLOOR_Y + level * B.DEPTH, D = c * hc;
+    const hc = B.FLOOR_Y + level * B.DEPTH, D = Math.min(c * hc, c * B.TOP - s * innerR(B.TOP));
     basinU.uPlane.value.set(0, c, -s, D);
     if (level <= 0.0005) { hasWater = false; water.visible = foam.visible = false; basinU.uWater.value = 0; return; }
     const yOf = z => (D + s * z) / c;
@@ -709,7 +718,7 @@ export function createBasin(ctx) {
     const cum = [0]; for (let i = 1; i < n; i++) cum.push(cum[i - 1] + pts[i].distanceTo(pts[i - 1]));
     const total = cum[n - 1];
     let seg = 0;
-    const W0 = 0.03 + 0.085 * rate, T0 = 0.004 + 0.009 * rate;
+    const W0 = 0.022 + 0.05 * rate, T0 = 0.005 + 0.008 * rate;
     for (let i = 0; i < PL; i++) {
       const L = (i / (PL - 1)) * total;
       while (seg < n - 2 && cum[seg + 1] < L) seg++;
@@ -766,7 +775,7 @@ export function createBasin(ctx) {
     const mk = Math.pow(murk, 0.65);
     tmpC.copy(cClear).lerp(cMurk, smooth(0, 0.6, murk));
     waterMat.color.copy(tmpC);
-    waterMat.opacity = lerp(0.1, 0.975, mk);
+    waterMat.opacity = lerp(0.2, 0.975, mk); waterMat.envMapIntensity = lerp(1.7, 0.7, murk);
     waterMat.roughness = lerp(0.025, 0.14, murk);
     waterMat.normalScale.setScalar((0.22 + agit * 0.5) * (1 - murk * 0.45));
     water.visible = hasWater;
@@ -794,7 +803,7 @@ export function createBasin(ctx) {
     if (wetPuddle > 0.002) {
       wetPuddle = Math.max(0, wetPuddle - dt * 0.004);
       puddle.visible = true; puddle.position.set(landing.x, 0.0007, landing.z + puddleR * 0.25); puddle.scale.set(puddleR * 1.35, puddleR, 1);
-      wetMat.opacity = 0.55 * smooth(0, 0.3, wetPuddle);
+      wetMat.opacity = 0.7 * smooth(0, 0.3, wetPuddle);
       wetMat.color.setRGB(lerp(0.11, 0.07, mk), lerp(0.105, 0.06, mk), lerp(0.1, 0.05, mk));
     } else puddle.visible = false;
     // overflow
