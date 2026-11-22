@@ -1793,7 +1793,17 @@
       move: function (p) { if (evq.length && evq[evq.length - 1][0] === 'move') evq[evq.length - 1] = ['move', p]; else evq.push(['move', p]); },
       up: function (p) { evq.push(['up', p]); }
     });
-    E.onQuality(function () { /* particles already halve themselves in low mode */ });
+    // particles already halve themselves in low mode; the sun's shadow map follows too
+    E.onQuality(function (low) {
+      var sun = W.lights && W.lights.sun;
+      if (!sun || !sun.shadow) return;
+      var n = low ? 1024 : 2048;
+      if (sun.shadow.mapSize.x === n) return;
+      sun.shadow.mapSize.set(n, n);
+      sun.shadow.normalBias = low ? 0.006 : 0.004;
+      if (sun.shadow.map) { sun.shadow.map.dispose(); sun.shadow.map = null; }
+      if (E.invalidateShadows) E.invalidateShadows();
+    });
     try { if (E.prewarm) E.prewarm(); } catch (e) { report(e); }
   }
 
