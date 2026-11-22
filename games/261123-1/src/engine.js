@@ -8,6 +8,8 @@
   var SAVE_KEY = 'gf-261123-1';
   var MAX_DT = 1 / 20;
   var DPR_MAX = 2;
+  // fill-rate budget: big iPads at DPR 2 would shade ~5.7M px per frame
+  var PIX_MAX = 3.2e6;
 
   var E = {
     renderer: null, scene: null, camera: null, canvas: null,
@@ -352,6 +354,8 @@
   function applyPixelRatio() {
     if (!E.renderer) return;
     var dpr = Math.min(window.devicePixelRatio || 1, DPR_MAX);
+    var px = viewW * viewH * dpr * dpr;
+    if (px > PIX_MAX) dpr = Math.max(1, dpr * Math.sqrt(PIX_MAX / px));
     E.renderer.setPixelRatio(dpr * resScale);
     E.renderer.setSize(viewW, viewH, false);
   }
@@ -875,6 +879,9 @@
       }
     }
     function updPool(pool, dt, fn) {
+      // nothing alive now or last frame: buffers already hold zero alpha
+      if (pool.live === 0 && !pool.wasLive) return;
+      pool.wasLive = pool.live > 0;
       for (var i = 0; i < pool.cap; i++) {
         var it = pool.items[i];
         if (!it.alive) { pool.alpha[i] = 0; continue; }
@@ -929,6 +936,8 @@
       [dust, spark].forEach(function (pool) {
         for (var j = 0; j < pool.cap; j++) { pool.items[j].alive = false; pool.alpha[j] = 0; }
         pool.live = 0;
+        pool.wasLive = false;
+        pool.geo.attributes.aAlpha.needsUpdate = true;
       });
       mesh.instanceMatrix.needsUpdate = true;
     };
@@ -987,6 +996,90 @@
   })();
   E.save = save;
 
+  // ---------------------------------------------------------------- shadow cache
+  // The shadow pass is ~2/3 of all draw calls. Re-render the shadow map only
+  // when a shadow caster or a shadow-casting light actually changed.
+  var shRefs = [], shVals = new Float64Array(64 * 34), shN = 0, shDirty = true;
+  function shGrow(n) {
+    if (n * 34 <= shVals.length) return;
+    var nv = new Float64Array(Math.max(n * 34, shVals.length * 2));
+    nv.set(shVals);
+    shVals = nv;
+  }
+  // writes one record (ref + up to 33 numbers); returns true when it differs
+  function shRec(ref, a, b, extra) {
+    var i = shN++;
+    shGrow(shN);
+    var o = i * 34, diff = shRefs[i] !== ref, k;
+    shRefs[i] = ref;
+    var ea = a.elements;
+    for (k = 0; k < 16; k++) { if (shVals[o + k] !== ea[k]) { diff = true; shVals[o + k] = ea[k]; } }
+    if (b) {
+      var eb = b.elements;
+      for (k = 0; k < 16; k++) { if (shVals[o + 16 + k] !== eb[k]) { diff = true; shVals[o + 16 + k] = eb[k]; } }
+    }
+    if (shVals[o + 32] !== extra) { diff = true; shVals[o + 32] = extra; }
+    return diff;
+  }
+  var shChanged = false;
+  function shVisit(o) {
+    if (!o.castShadow) return;
+    if (o.isMesh || o.isPoints || o.isLine) {
+      var m = o.material, mv = 1;
+      if (Array.isArray(m)) { for (var i = 0; i < m.length; i++) if (m[i] && m[i].visible === false) mv += 2 << i; }
+      else if (m && m.visible === false) mv = 0;
+      if (shRec(o, o.matrixWorld, null, o.geometry ? o.geometry.id * 64 + mv : mv)) shChanged = true;
+    } else if (o.isLight && o.shadow) {
+      var sh = o.shadow;
+      if (shRec(o, o.matrixWorld, o.target ? o.target.matrixWorld : null, sh.mapSize.x * 8192 + sh.mapSize.y)) shChanged = true;
+      if (shRec(sh, sh.camera.projectionMatrix, null, sh.bias * 1e6 + sh.normalBias)) shChanged = true;
+    }
+  }
+  function shadowNeedsUpdate(scene) {
+    shN = 0; shChanged = shDirty; shDirty = false;
+    var prevLen = shRefs.length;
+    scene.traverseVisible(shVisit);
+    if (shN !== prevLen) { shChanged = true; shRefs.length = shN; }
+    return shChanged;
+  }
+  E.invalidateShadows = function () { shDirty = true; };
+
+  function renderFrame() {
+    var r = E.renderer, s = E.scene;
+    // world matrices once here (render() skips it: matrixWorldAutoUpdate = false)
+    s.updateMatrixWorld();
+    if (r.shadowMap.enabled && !r.shadowMap.autoUpdate && shadowNeedsUpdate(s)) r.shadowMap.needsUpdate = true;
+    r.render(s, E.camera);
+  }
+
+  // upload textures and compile shaders up front, so the first time a prop
+  // appears (or the room darkens) does not stall a frame on iOS
+  E.prewarm = function () {
+    var r = E.renderer, s = E.scene;
+    if (!r || !s) return;
+    var seen = new Set();
+    var KEYS = ['map', 'alphaMap', 'aoMap', 'bumpMap', 'normalMap', 'roughnessMap', 'metalnessMap', 'emissiveMap', 'lightMap', 'displacementMap'];
+    s.traverse(function (o) {
+      var ms = o.material ? (Array.isArray(o.material) ? o.material : [o.material]) : [];
+      for (var i = 0; i < ms.length; i++) {
+        var m = ms[i];
+        if (!m || seen.has(m)) continue;
+        seen.add(m);
+        for (var k = 0; k < KEYS.length; k++) {
+          var t = m[KEYS[k]];
+          if (t && t.isTexture && !seen.has(t)) { seen.add(t); safe(function (tx) { r.initTexture(tx); }, t); }
+        }
+        if (m.uniforms) {
+          for (var u in m.uniforms) {
+            var v = m.uniforms[u] && m.uniforms[u].value;
+            if (v && v.isTexture && !seen.has(v)) { seen.add(v); safe(function (tx) { r.initTexture(tx); }, v); }
+          }
+        }
+      }
+    });
+    if (E.camera) safe(function () { r.compile(s, E.camera); });
+  };
+
   // ---------------------------------------------------------------- loop
   var onFrameCb = null;
   var rafId = 0, lastNow = null, running = false, ctxLost = false;
@@ -1008,7 +1101,7 @@
     try { updateCamera(dt); } catch (err) { report(err); }
     try { P.update(dt); } catch (err) { report(err); }
     if (!ctxLost) {
-      try { E.renderer.render(E.scene, E.camera); } catch (err) { report(err); }
+      try { renderFrame(); } catch (err) { report(err); }
     }
   }
   function start() {
@@ -1090,11 +1183,14 @@
     renderer.toneMappingExposure = 1.0;
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.shadowMap.autoUpdate = false;   // see renderFrame / shadow cache
+    renderer.shadowMap.needsUpdate = true;
     renderer.setClearColor(0xe9e2d6, 1);
 
     E.renderer = renderer;
     E.canvas = cv;
     E.scene = new THREE.Scene();
+    E.scene.matrixWorldAutoUpdate = false;   // updated once per frame in renderFrame
     E.camera = new THREE.PerspectiveCamera(32, 1, 0.05, 30);
     E.camera.position.set(0, 1, 3);
 
@@ -1116,6 +1212,7 @@
     }, false);
     cv.addEventListener('webglcontextrestored', function () {
       ctxLost = false;
+      shDirty = true;
       applyPixelRatio();
     }, false);
 

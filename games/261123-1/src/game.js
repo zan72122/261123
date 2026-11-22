@@ -1794,6 +1794,7 @@
       up: function (p) { evq.push(['up', p]); }
     });
     E.onQuality(function () { /* particles already halve themselves in low mode */ });
+    try { if (E.prewarm) E.prewarm(); } catch (e) { report(e); }
   }
 
   G.Game = {
