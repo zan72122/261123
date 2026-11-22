@@ -18,17 +18,21 @@ export const L = {
   CLIP_Z: [0.35, 0.49, 0.75],                                  // clip positions along Z: shoe, shoe, bag
   CLIP_Y: 0.98,                                                // height of the clip jaws
 };
-// Camera shots: box = [minX,minY,minZ,maxX,maxY,maxZ] must fit in view.
+// Camera shots. The camera director fits `pts` (flat xyz list) if present, else the 8 corners of
+// box = [minX,minY,minZ,maxX,maxY,maxZ] (box is always needed: its centre is the shadow focus).
 // yaw (deg): 0 looks toward -Z, 90 looks toward +X. pitch (deg): looking DOWN (negative = up).
+function ring(cx, y, cz, r, n = 10) { const o = []; for (let i = 0; i < n; i++) { const a = (i / n) * Math.PI * 2; o.push(cx + Math.cos(a) * r, y, cz + Math.sin(a) * r); } return o; }
+const BASIN_PTS = [...ring(0, 0.13, 0, 0.275), ...ring(0, 0, 0, 0.23, 6)];
 export const SHOTS = {
-  bag:    { box: [-0.74, 0.0, 0.16, -0.08, 0.10, 0.66], yaw: 0, pitch: 58 },
-  faucet: { box: [-0.36, 0.0, -0.48, 0.36, 0.72, 0.30], yaw: 0, pitch: 38 },
-  dunk:   { box: [-0.38, 0.0, -0.27, 0.27, 0.16, 0.62], yaw: 0, pitch: 55 },
-  scrub:  { box: [-0.105, 0.05, -0.10, 0.155, 0.10, 0.12], yaw: 0, pitch: 64 },
-  load:   { box: [-0.30, 0.0, -0.30, 0.75, 0.40, 0.75], yaw: 0, pitch: 52 },
-  spin:   { box: [0.34, 0.0, 0.34, 0.76, 0.48, 0.76], yaw: 0, pitch: 52 },
-  hang:   { box: [0.36, 0.05, 0.20, 1.25, 1.42, 0.92], yaw: 90, pitch: 6 },
-  sky:    { box: [1.25, 0.66, 0.22, 1.25, 1.40, 0.90], yaw: 90, pitch: -16 },
-  pack:   { box: [1.25, 0.60, 0.22, 1.25, 1.40, 0.92], yaw: 90, pitch: -12 },
-  end:    { box: [1.25, 0.58, 0.50, 1.25, 1.38, 0.96], yaw: 90, pitch: -14 },
+  bag:     { box: [-0.74, 0.0, 0.16, -0.36, 0.08, 0.60], yaw: 0, pitch: 56, margin: 0.1 },      // opening close-up of the bag
+  bagWide: { box: [-0.74, 0.0, 0.16, -0.10, 0.08, 0.66], yaw: 0, pitch: 56 },                   // ...widened once a shoe has popped out
+  faucet:  { box: [-0.28, 0.0, -0.44, 0.28, 0.66, 0.28], yaw: 0, pitch: 40, margin: 0.06,
+             pts: [...BASIN_PTS, -0.06, 0.66, -0.44, 0.06, 0.66, -0.44, -0.06, 0.66, -0.26, 0.06, 0.66, -0.26] },
+  rinse:   { box: [-0.28, 0.0, -0.44, 0.28, 0.66, 0.62], yaw: 0, pitch: 40, margin: 0.06,     // like faucet, with room in front for tipping the basin
+             pts: [...BASIN_PTS, -0.06, 0.66, -0.44, 0.06, 0.66, -0.44, -0.06, 0.66, -0.26, 0.06, 0.66, -0.26, -0.2, 0, 0.62, 0.2, 0, 0.62] },
+  dunk:    { box: [-0.38, 0.0, -0.27, 0.27, 0.16, 0.62], yaw: 0, pitch: 55, margin: 0.06,
+             pts: [...BASIN_PTS, -0.36, 0, 0.40, -0.36, 0.05, 0.62, -0.10, 0, 0.64, -0.10, 0.05, 0.42, 0, 0.56, -0.16] },
+  scrub:   { box: [-0.105, 0.05, -0.10, 0.155, 0.10, 0.12], yaw: 0, pitch: 64 },
+  load:    { box: [-0.30, 0.0, -0.30, 0.75, 0.40, 0.75], yaw: 0, pitch: 52 },
+  spin:    { box: [0.34, 0.0, 0.34, 0.76, 0.48, 0.76], yaw: 0, pitch: 52 },
 };

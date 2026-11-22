@@ -46,11 +46,13 @@ export function createCameraDirector(ctx, camera, vp, guard) {
     if (xr - xl < 0.3) { xl = -0.15; xr = 0.15; }
     if (yt - yb < 0.3) { yb = -0.15; yt = 0.15; }
     const tR = xr * tanH, tL = -xl * tanH, tU = yt * tanV, tD = -yb * tanV;
-    const b = s.box;
+    const b = s.box, pts = s.pts;       // pts: optional flat [x,y,z, ...] list fitted instead of the box corners
     _c.set((b[0] + b[3]) / 2, (b[1] + b[4]) / 2, (b[2] + b[5]) / 2);
     let A = -Infinity, B = Infinity, C = -Infinity, D = Infinity, zmin = Infinity;
-    for (let i = 0; i < 8; i++) {
-      _p.set(i & 1 ? b[3] : b[0], i & 2 ? b[4] : b[1], i & 4 ? b[5] : b[2]).sub(_c);
+    const n = pts ? pts.length / 3 : 8;
+    for (let i = 0; i < n; i++) {
+      if (pts) _p.set(pts[i * 3], pts[i * 3 + 1], pts[i * 3 + 2]).sub(_c);
+      else _p.set(i & 1 ? b[3] : b[0], i & 2 ? b[4] : b[1], i & 4 ? b[5] : b[2]).sub(_c);
       const x = _p.dot(_r), y = _p.dot(_u), z = _p.dot(_f);
       A = Math.max(A, x - tR * z); B = Math.min(B, x + tL * z);
       C = Math.max(C, y - tU * z); D = Math.min(D, y + tD * z);

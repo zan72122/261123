@@ -206,7 +206,7 @@ const load = {
     if (ctx.state.loaded[0] && ctx.state.loaded[1]) finishLoad(ctx); else loadHint(ctx);
   },
   exit(ctx) {
-    if (LD.tap) ctx.sim.tapUp({ isTap: false, cancelled: true });
+    if (LD.tap) ctx.sim.release();
     LD.tap = false; LD.grab = null; LD.carry = null;
     for (const r of ctx.rigs) r.press = 0;
   },

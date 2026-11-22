@@ -813,7 +813,7 @@ export function createBasin(ctx) {
       ofMat.color.copy(mcol).lerp(new THREE.Color(0x7d8f98), 1 - smooth(0, 0.6, murk));
       wetRing = Math.min(1, wetRing + dt * 0.8 * overflow);
     } else overflowMesh.visible = false;
-    if (wetRing > 0.002) { wetRing = Math.max(0, wetRing - dt * 0.004); ring.visible = true; ring.material.opacity = 0.5 * smooth(0, 0.4, wetRing); ring.scale.setScalar(0.95 + 0.25 * wetRing); } else ring.visible = false;
+    if (wetRing > 0.002) { wetRing = Math.max(0, wetRing - dt * 0.004); ring.visible = true; ring.material.opacity = 0.26 * smooth(0, 0.4, wetRing); ring.scale.setScalar(0.92 + 0.12 * wetRing); } else ring.visible = false;
     drops.update(dt);
   };
   api.update(0);

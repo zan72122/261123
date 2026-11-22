@@ -4,7 +4,7 @@ import { ease } from './timeline.js';
 import { makeHandTexture, makeRingTexture } from './hand.js';
 
 const GHOST_PX = 104;    // sprite height in CSS px (the visible hand is ~90 px; the wrist fades out)
-const GHOST_OPACITY = 0.55;
+const GHOST_OPACITY = 0.82;
 const BURST_PERIOD = 2.5, BURST_LEN = 0.8;
 const GLINT_PERIOD = 2.5;
 
@@ -170,7 +170,7 @@ export function createHint(ctx, vp, guard) {
     set(o) {
       if (cfg) stopWobble();
       if (!o) { hint.clear(); return; }
-      cfg = Object.assign({ delay1: 3.5, delay2: 7.5 }, o);
+      cfg = Object.assign({ delay1: 2.2, delay2: 6.0 }, o);
       if (!cfg.gesture) cfg.gesture = { type: 'tap' };
       bindPoint(tgt, cfg.target);
       toBound = false;
@@ -222,11 +222,11 @@ export function createHint(ctx, vp, guard) {
         spot.target.position.copy(pos);
         spot.target.updateMatrixWorld();
         const d = spot.position.distanceTo(pos);
-        const r = Math.max(0.07, tgt.radius * 1.25 + 0.04);
+        const r = Math.max(0.1, tgt.radius * 1.3 + 0.06);
         spot.angle = Math.min(0.6, Math.max(0.04, Math.atan(r / d)));
         spot.penumbra = 0.9;
         const pulse = 0.5 + 0.5 * Math.sin(t * Math.PI * 2 / 1.8);
-        const base = level === 0 ? 0.7 + 0.4 * pulse : 1.1 + 0.6 * pulse;
+        const base = level === 0 ? 2.0 + 1.0 * pulse : 2.8 + 1.4 * pulse;
         spot.intensity = base * d * d * lightK; // ~constant illuminance on the target
       } else spot.intensity = 0;
 

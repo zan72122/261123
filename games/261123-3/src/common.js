@@ -83,7 +83,7 @@ export function packedPose(ctx, i) {
 
 // Pose of a shoe peeking out of the mouth of the LYING bag (heel sticks out ~4.5 cm). out = extra metres pulled out.
 export function peekPose(ctx, out = 0) {
-  return { parent: ctx.bag.mouth, pos: new THREE.Vector3(0, -ctx.bag.mouth.position.y + 0.004, -0.05 + out), quat: new THREE.Quaternion() };
+  return { parent: ctx.bag.mouth, pos: new THREE.Vector3(0, -ctx.bag.mouth.position.y + 0.004, -0.035 + out), quat: new THREE.Quaternion() };
 }
 
 // Hang the bag from clip 2 (garden stages) or lay it on the terrace (wash stages).
@@ -232,7 +232,7 @@ const _tq = new THREE.Quaternion(), _tq2 = new THREE.Quaternion();
 // ---------------------------------------------------------------------------------------------
 export function createSim(ctx) {
   const st = () => ctx.state;
-  let flow = 0, over = 0, dripT = 0, rippleT = 0, grab = null, squeakAcc = 0, patchT = 0, tapTween = null;
+  let flow = 0, over = 0, dripT = 0, rippleT = 0, grab = null, squeakAcc = 0, tapTween = null;
   const hv = new THREE.Vector3(), tip = new THREE.Vector3();
   const sim = {
     flow: 0, overflow: 0,
@@ -274,6 +274,7 @@ export function createSim(ctx) {
       return true;
     },
     grabbing() { return !!grab; },
+    release() { grab = null; },      // drop a held handle without side effects (stage exit)
     update(dt) {
       const s = st(), w = s.water, basin = ctx.basin, faucet = ctx.faucet, audio = ctx.audio;
       const open = sim.open();
@@ -295,7 +296,7 @@ export function createSim(ctx) {
       over += (overT - over) * (1 - Math.exp(-dt * 3));
       if (over < 0.01) over = 0;
       sim.overflow = over;
-      if (over > 0) { const k = Math.exp(-over * 0.4 * dt); w.murk *= k; }
+      if (over > 0) { const k = Math.exp(-over * 0.012 * dt); w.murk *= k; }   // overflow only dilutes slowly: dirty water stays dirty until it is tipped out
       if (flow > 0.05) w.foam *= Math.exp(-flow * 0.25 * dt);
       w.murk = clamp(w.murk, 0, 1); w.foam = clamp(w.foam, 0, 1);
       basin.setWater(w.level, w.murk, w.foam);
@@ -305,13 +306,6 @@ export function createSim(ctx) {
         rippleT -= dt;
         if (rippleT <= 0) { rippleT = 0.22 + Math.random() * 0.15; basin.ripple(0, L.FAUCET[2] + 0.24, 0.35 + flow * 0.5); }
         if (basin.agitate) basin.agitate(flow * 0.6);
-      }
-      if (over > 0.1) {
-        patchT -= dt;
-        if (patchT <= 0) {
-          patchT = 0.5; const a = Math.random() * 6.283, r = basin.OUTER_R + 0.03 + Math.random() * 0.1;
-          ctx.fx.wetPatch(hv.set(Math.cos(a) * r, 0, Math.sin(a) * r), 0.08 + Math.random() * 0.06, { life: 26, grow: 0.03 });
-        }
       }
       // a barely-open tap drips
       if (open > 0.005 && flow < 0.14) {

@@ -151,7 +151,7 @@ function setPeek(ctx, i, out) {
   if (g.parent !== m) m.add(g);
   g.visible = true; g.scale.setScalar(1);
   // same as peekPose(ctx, out) from common.js (inlined: no allocation per frame)
-  g.position.set(0, -m.position.y + 0.004, -0.05 + out);
+  g.position.set(0, -m.position.y + 0.004, -0.035 + out);
   g.quaternion.identity();
 }
 function heelWorld(ctx, out) {
@@ -209,6 +209,7 @@ function popShoe(ctx) {
   ctx.bag.setFill(2 - st.pulled);
   BG.q = 0; BG.qs = 0;
   if (st.pulled === 1) {
+    ctx.cam.goto(SHOTS.bagWide, 0.9);   // make room for the shoes on the ground
     // the second shoe slides into the mouth
     BG.peek = 1; BG.qs = -0.75; setPeek(ctx, 1, BG.qs * PULL_OUT); ctx.rigs[1].where = 'bag';
     ctx.bag.setOpen(0.75);
@@ -229,7 +230,7 @@ function popShoe(ctx) {
 }
 
 const bag = {
-  id: 'bag', shot: SHOTS.bag,
+  id: 'bag', shot: (ctx) => (ctx.state.pulled > 0 ? SHOTS.bagWide : SHOTS.bag),
   place(ctx) {
     placeCommon(ctx, 'bag');
     const st = ctx.state;
@@ -331,7 +332,7 @@ function tapOrWaterDown(ctx, p, S) {
   }
   return false;
 }
-function releaseTap(ctx, S, p) { if (S.tapGrab) { S.tapGrab = false; ctx.sim.tapUp(p || { isTap: false, cancelled: true }); } }
+function releaseTap(ctx, S, p) { if (S.tapGrab) { S.tapGrab = false; if (p) ctx.sim.tapUp(p); else ctx.sim.release(); } }
 
 const fill = {
   id: 'fill', shot: SHOTS.faucet,
@@ -798,7 +799,7 @@ function rinseFinish(ctx) {
   ctx.tl.after(0.9, () => ctx.flow.next());
 }
 const rinse = {
-  id: 'rinse', shot: SHOTS.faucet,
+  id: 'rinse', shot: SHOTS.rinse,
   place(ctx) {
     placeCommon(ctx, 'rinse');
     const st = ctx.state;
@@ -879,7 +880,7 @@ const rinse = {
         ctx.hint.nudge();
         if (st.rinse >= 1) rinseFinish(ctx);
         else ctx.saveSoon();
-      } else if (needTip(ctx) && ctx.sim.overflow > 0.1) ctx.hint.nudge(); // overflowing dilutes the murk: progress too
+      }
     }
     ctx.audio.setLoop('fizz', clamp(fx.foam.count() / 200, 0, 1));
     rinseHint(ctx);
