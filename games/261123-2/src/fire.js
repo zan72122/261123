@@ -830,8 +830,9 @@ export function create(G) {
     const flick = 1 + 0.16 * Math.sin(t * 11.3) * Math.sin(t * 7.1 + 1.3) + 0.1 * Math.sin(t * 23.7) + 0.06 * Math.sin(t * 3.3);
     const lv = clamp(show, 0, 1) * (1 + 0.45 * w);
     fireLight.position.set(ctr.x, baseY + 0.25, ctr.z + 0.05);
-    fireLight.intensity = lv * 3.2 * flick;
-    fireLight.visible = lv > 0.002;
+    // keep the light in the scene at all times (intensity 0 when out): toggling its visibility changes the
+    // light count and forces every lit material to recompile its shader mid-game (a visible hitch on iOS).
+    fireLight.intensity = lv > 0.002 ? lv * 3.2 * flick : 0;
     glow.visible = lv > 0.002;
     glow.position.set(ctr.x, 0.02, ctr.z);
     const gs = 0.5 + 0.5 * clamp(lv, 0, 1.2);

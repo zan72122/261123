@@ -813,7 +813,7 @@ export function create(G) {
     const q = G.quality || {};
     const wantShadow = q.shadows !== false;
     if (sun.castShadow !== wantShadow) sun.castShadow = wantShadow;
-    const wantSize = q.low ? 1024 : 2048;
+    const wantSize = q.low ? 1024 : (q.shadowSize || 2048);
     if (wantSize !== shadowSize) {
       shadowSize = wantSize;
       sun.shadow.mapSize.set(wantSize, wantSize);

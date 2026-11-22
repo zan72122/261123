@@ -236,7 +236,10 @@ async function boot() {
   let W = Math.max(1, window.innerWidth), H = Math.max(1, window.innerHeight);
   const dpr = window.devicePixelRatio || 1;
   let resScale = 1;
-  const baseRatio = () => Math.min(dpr, quality.low ? 1.5 : 2);
+  // cap the number of rendered pixels: a large iPad at 2x is ~5.6 M pixels per frame (plus MSAA), far more fill
+  // than the phone this was tuned on; ~3.2 M keeps phones at a full 2x and big tablets at ~1.5x (still crisp).
+  const PIX_BUDGET = 3.2e6;
+  const baseRatio = () => Math.min(dpr, Math.max(1, Math.min(quality.low ? 1.5 : 2, Math.sqrt(PIX_BUDGET / (W * H)))));
   const applyRatio = () => { renderer.setPixelRatio(baseRatio() * resScale); renderer.setSize(W, H, false); };
   camera.aspect = W / H; camera.updateProjectionMatrix();
   applyRatio();
@@ -805,7 +808,10 @@ async function boot() {
   if (window.visualViewport) window.visualViewport.addEventListener('resize', onResize);
 
   // ---- quality adaption
-  let ftAvg = 16, slowT = 0, fastT = 0, warm = 0;
+  // thresholds follow the display's own frame interval (60 / 120 Hz, or 30 Hz in iOS Low Power Mode), so a capped
+  // display is not mistaken for a slow GPU, and a 60 Hz device steps down as soon as it really drops frames.
+  // (estimate: shortest frame seen over the last ~2 s; vsync quantises frames to multiples of the interval)
+  let ftAvg = 16, slowT = 0, fastT = 0, warm = 0, period = 16.7, binMin = 1e9, prevMin = 1e9, binT = 0;
   function goLow() {
     if (quality.low && !quality.shadows) return;
     quality.low = true; quality.particles = 0.5; quality.shadows = false;
@@ -819,20 +825,43 @@ async function boot() {
   if (quality.low) renderer.shadowMap.enabled = false;
   function adapt(rawMs, dt) {
     warm += dt;
+    if (rawMs > 4 && rawMs < 250 && rawMs < binMin) binMin = rawMs;
+    binT += dt;
+    if (binT >= 1) { binT = 0; period = Math.min(binMin, prevMin); prevMin = binMin; binMin = 1e9; }
     if (warm < 2 || rawMs > 250) return;
     ftAvg += (rawMs - ftAvg) * 0.08;
-    if (ftAvg > 36) {
+    const base = Math.max(16.7, period);
+    if (ftAvg > base * 1.4) {
       slowT += dt; fastT = 0;
-      if (slowT > 1.5) {
+      if (slowT > 1.2) {
         slowT = 0;
-        if (resScale > 0.601) { resScale = Math.max(0.6, resScale - 0.1); applyRatio(); }
+        // cheapest-looking first: shadow map 2048 -> 1024, then resolution in steps, then the low preset
+        if (quality.shadows && !quality.shadowSize) quality.shadowSize = 1024;
+        else if (resScale > 0.701) { resScale = Math.max(0.7, resScale - 0.1); applyRatio(); }
         else if (!quality.low || quality.shadows) goLow();
+        else if (resScale > 0.601) { resScale = Math.max(0.6, resScale - 0.1); applyRatio(); }
       }
-    } else if (ftAvg < 22) {
+    } else if (ftAvg < base * 1.15) {
       fastT += dt; slowT = 0;
       if (fastT > 4) { fastT = 0; if (resScale < 1) { resScale = Math.min(1, resScale + 0.1); applyRatio(); } }
     } else { slowT = Math.max(0, slowT - dt); fastT = 0; }
   }
+
+  // ---- warm-up: compile every shader and upload every texture now, behind the fade-in, instead of the first
+  // time each object shows up (fire, ash, cut potato...), which stalls a frame or more on iOS.
+  try {
+    rig.update(0, 0);
+    renderer.compile(scene, camera);
+    const seen = new Set();
+    const up = (t) => { if (t && t.isTexture && !seen.has(t)) { seen.add(t); try { renderer.initTexture(t); } catch (e) {} } };
+    scene.traverse((o) => {
+      const ms = !o.material ? [] : Array.isArray(o.material) ? o.material : [o.material];
+      for (const m of ms) {
+        for (const k in m) up(m[k]);
+        if (m.uniforms) for (const k in m.uniforms) up(m.uniforms[k] && m.uniforms[k].value);
+      }
+    });
+  } catch (e) {}
 
   // ---- loop
   const order = ['story', 'world', 'leaves', 'fire', 'potato', 'audio'];
