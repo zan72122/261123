@@ -98,7 +98,7 @@
       var t = R(), warm = R();
       var base = [238 - t * 14 - warm * 6, 214 - t * 20 - warm * 10, 170 - t * 26 - warm * 14];
       var knot = null;
-      if (R() < 0.22) {
+      if (R() < 0.16) {
         var kr = 4 + R() * 5;
         knot = { x: 120 + R() * 780, y: kr + 4 + R() * Math.max(1, h - 2 * kr - 8), r: kr, w: 1.2 + R() * 1.2, s2: Math.pow(kr * 3.0, 2) };
       }
@@ -145,7 +145,7 @@
         ph += S.ph0 + (vn(xl * 0.02 + 7, yl * 0.15 + S.n) - 0.5) * 0.3;
         var kin = 0, kd = 0;
         if (S.knot) {
-          var K = S.knot, kx = xl - K.x, ky = (yl - K.y) * 1.25, kd2 = kx * kx * 0.45 + ky * ky;
+          var K = S.knot, kx = xl - K.x, ky = (yl - K.y) * 1.2, kd2 = kx * kx * 0.2 + ky * ky;
           if (kd2 < K.s2 * 4) {
             ph += K.w * Math.exp(-kd2 / K.s2);
             kd = Math.sqrt(kd2);
@@ -162,7 +162,7 @@
         if (kin > 0) {
           var kf = (kd / 1.6) % 1, kr2 = 0.82 + 0.18 * Math.abs(kf * 2 - 1);
           var rim = 1 - 0.4 * smooth(K.r * 0.5, K.r * 0.95, kd);
-          r += (150 * kr2 * rim - r) * kin; g += (104 * kr2 * rim - g) * kin; b += (66 * kr2 * rim - b) * kin;
+          r += (176 * kr2 * rim - r) * kin * 0.85; g += (128 * kr2 * rim - g) * kin * 0.85; b += (80 * kr2 * rim - b) * kin * 0.85;
         }
         var jl = near / slopeF; var jdark = jl < 0.6 ? 0.8 : jl < 1.2 ? 0.93 : 1;
         var m = seam * jdark;
@@ -239,8 +239,8 @@
         acc += len; if (acc >= W - 0.5) break;
       }
       for (var j = 0; j < joints.length; j++) {
-        var t = R(), grey = 0.12 + R() * 0.2, hue = (R() - 0.5) * 8;
-        var base = [184 - t * 40 + hue, 142 - t * 34, 100 - t * 26 - hue * 0.6];
+        var t = R(), grey = 0.2 + R() * 0.25, hue = (R() - 0.5) * 8;
+        var base = [176 - t * 42 + hue, 136 - t * 34, 98 - t * 26 - hue * 0.6];
         base = [base[0] + (150 - base[0]) * grey, base[1] + (132 - base[1]) * grey, base[2] + (112 - base[2]) * grey];
         joints[j].seg = {
           base: base, flat: R() < 0.6, s: 7 + R() * 9, c: (y1 - y0) * (0.5 + (R() - 0.5) * 1.8), h0: 10 + R() * 60,
@@ -264,11 +264,12 @@
           var warp = vn(xl * 0.003 + S.n, yl * 0.025 + S.n) - 0.5, ph;
           if (S.flat) { var dy = yl - S.c, hh = S.h0 + S.slope * xl + warp * 22; ph = Math.sqrt(dy * dy + hh * hh) / S.s; }
           else ph = (yl + warp * 9) / S.s;
-          ph += S.ph0 + (vn(xl * 0.015 + 3, yl * 0.2 + S.n) - 0.5) * 0.6;
+          var pv = vn(xl * 0.11 + S.n, yl * 1.2);
+          ph += S.ph0 + (pv - 0.5) * 0.25;
           var f = ph - Math.floor(ph);
           var lw = smooth(0.5, 0.85, f) * (1 - smooth(0.88, 1.0, f));
-          var pore = smooth(0.66, 0.84, vn(xl * 0.11 + S.n, yl * 1.2));
-          var cv = (vn(xl * 0.002 + 9, yl * 0.02 + S.n) - 0.5) * 0.12;
+          var pore = smooth(0.66, 0.84, pv);
+          var cv = warp * 0.1;
           var e = Math.min(ey, xl, Jt.len - xl);
           var m = (1 - S.lwK * lw - pore * 0.12 + cv * 0.8) * (1 + (R() - 0.5) * 0.03);
           var bump = 0.62 + lw * 0.05 - pore * 0.08, rough = S.rough + pore * 0.06;
@@ -295,7 +296,7 @@
       var lo = vnP(x * 4 / N, y * 4 / N, 4), mid = vnP(x * 24 / N + 0.3, y * 24 / N, 24), hi = vnP(x * 96 / N, y * 96 / N + 0.7, 96), vh = vnP(x * 200 / N, y * 200 / N, 200);
       var m = 1 + (lo - 0.5) * 0.035 + (mid - 0.5) * 0.02 + (R() - 0.5) * 0.012;
       var o = (y * N + x) * 4;
-      a[o] = c255(238 * m); a[o + 1] = c255(233 * m); a[o + 2] = c255(224 * m); a[o + 3] = 255;
+      a[o] = c255(222 * m); a[o + 1] = c255(217 * m); a[o + 2] = c255(208 * m); a[o + 3] = 255;
       var bump = 0.5 + (mid - 0.5) * 0.35 + (hi - 0.5) * 0.35 + (vh - 0.5) * 0.25;
       d[o] = c255(bump * 255); d[o + 1] = c255((0.88 + (hi - 0.5) * 0.06) * 255); d[o + 2] = 0; d[o + 3] = 255;
     }
@@ -315,9 +316,10 @@
       var o = (y * N + x) * 4;
       var ex = Math.min(x, N - 1 - x), ey = Math.min(y, N - 1 - y);
       var inB = ex < bx || ey < by;
-      var n1 = vn(x * 0.35, y * 0.35), n2 = vn(x * 0.05 + 20, y * 0.05), n3 = vn(x * 0.008, y * 0.008 + 40), rr = R();
+      var rr = R(), n2 = 0.5, n3 = 0.5, n1 = 0.5 + (R() - 0.5) * 0.6;
+      if (!(ex < bx || ey < by)) { n2 = vn(x * 0.05 + 20, y * 0.05); n3 = vn(x * 0.008, y * 0.008 + 40); }
       if (!inB) {
-        var m = 0.9 + (n1 - 0.5) * 0.12 + (n2 - 0.5) * 0.035 + (n3 - 0.5) * 0.03 + (rr - 0.5) * 0.16;
+        var m = 0.9 + (n1 - 0.5) * 0.12 + (n2 - 0.5) * 0.035 + (n3 - 0.5) * 0.03 + (rr - 0.5) * 0.11;
         a[o] = c255(118 * m); a[o + 1] = c255(121 * m); a[o + 2] = c255(124 * m); a[o + 3] = 255;
         d[o] = c255((0.5 + (n1 - 0.5) * 0.5 + (rr - 0.5) * 0.35) * 255); d[o + 1] = 245;
       } else {
@@ -332,7 +334,7 @@
     }
     xa.putImageData(A, 0, 0); xd.putImageData(D, 0, 0);
     // fibres
-    for (var i = 0; i < 6000; i++) {
+    for (var i = 0; i < 3500; i++) {
       var fx = bx + 2 + R() * (N - 2 * bx - 4), fy = by + 2 + R() * (N - 2 * by - 4), ang = R() * Math.PI * 2, ln = 3 + R() * 7;
       xa.strokeStyle = R() < 0.5 ? 'rgba(170,172,176,0.10)' : 'rgba(60,62,66,0.10)';
       xa.lineWidth = 0.7;
@@ -606,9 +608,9 @@
     var sc = new THREE.Scene();
     function bm(r, g, b) { return new THREE.MeshBasicMaterial({ color: new THREE.Color(r, g, b), side: THREE.BackSide }); }
     var mats = eve ? [
-      bm(0.11, 0.12, 0.155), bm(0.12, 0.13, 0.165), bm(0.14, 0.15, 0.19), bm(0.05, 0.04, 0.04), bm(0.10, 0.11, 0.15), bm(0.13, 0.14, 0.18)
+      bm(0.10, 0.125, 0.16), bm(0.11, 0.135, 0.17), bm(0.13, 0.155, 0.195), bm(0.05, 0.045, 0.045), bm(0.09, 0.115, 0.15), bm(0.12, 0.145, 0.185)
     ] : [
-      bm(0.42, 0.38, 0.32), bm(0.46, 0.41, 0.35), bm(0.72, 0.70, 0.67), bm(0.12, 0.08, 0.05), bm(0.40, 0.37, 0.32), bm(0.55, 0.52, 0.47)
+      bm(0.42, 0.38, 0.32), bm(0.46, 0.41, 0.35), bm(0.6, 0.58, 0.55), bm(0.12, 0.08, 0.05), bm(0.40, 0.37, 0.32), bm(0.55, 0.52, 0.47)
     ];
     var box = new THREE.Mesh(new THREE.BoxGeometry(7, 2.9, 6), mats); box.position.set(0, 1.05, 0.5); sc.add(box);
     function quad(w, h, col, x, y, z, ry, rx) {
@@ -653,9 +655,9 @@
 
     S.woodFace = new THREE.MeshStandardMaterial({ map: S.woodMap, roughnessMap: S.woodData, bumpMap: S.woodData, bumpScale: 1.2, roughness: 1, metalness: 0 });
     S.woodEnd = new THREE.MeshStandardMaterial({ map: S.endMap, roughnessMap: S.endData, bumpMap: S.endData, bumpScale: 1.5, roughness: 1, metalness: 0 });
-    S.holeMat = new THREE.MeshStandardMaterial({ map: S.holeMap, normalMap: S.holeNormal, transparent: true, depthWrite: false, roughness: 0.85, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 });
-    S.grooveMat = new THREE.MeshStandardMaterial({ map: S.grooveMap, transparent: true, depthWrite: false, roughness: 0.9, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 });
-    S.zinc = new THREE.MeshStandardMaterial({ color: new THREE.Color(0.78, 0.81, 0.85), metalness: 1.0, roughness: 0.26 });
+    S.holeMat = new THREE.MeshStandardMaterial({ map: S.holeMap, normalMap: S.holeNormal, transparent: true, depthWrite: false, roughness: 0.85 });
+    S.grooveMat = new THREE.MeshStandardMaterial({ map: S.grooveMap, transparent: true, depthWrite: false, roughness: 0.9 });
+    S.zinc = new THREE.MeshStandardMaterial({ color: new THREE.Color(0.62, 0.65, 0.69), metalness: 1.0, roughness: 0.24 });
     S.zincRecess = new THREE.MeshStandardMaterial({ color: new THREE.Color(0.42, 0.44, 0.47), metalness: 0.85, roughness: 0.45, side: THREE.BackSide });
     S.screwGeo = buildScrewGeo();
 
@@ -699,8 +701,8 @@
     scene.add(hemi);
     scene.environment = S.envDay;
 
-    var DAY = { dir: new THREE.Vector3(-1.6, 2.05, 1.55), sun: new THREE.Color(1.0, 0.9, 0.78), si: 4.2, sky: new THREE.Color(1.0, 0.97, 0.93), gnd: new THREE.Color(0.55, 0.42, 0.32), hi: 0.3, env: 1.0 };
-    var EVE = { dir: new THREE.Vector3(-2.3, 1.15, 1.2), sun: new THREE.Color(1.0, 0.56, 0.3), si: 1.2, sky: new THREE.Color(0.5, 0.58, 0.82), gnd: new THREE.Color(0.26, 0.24, 0.26), hi: 0.45, env: 1.0 };
+    var DAY = { dir: new THREE.Vector3(-1.6, 2.05, 1.55), sun: new THREE.Color(1.0, 0.92, 0.82), si: 3.6, sky: new THREE.Color(1.0, 0.97, 0.93), gnd: new THREE.Color(0.55, 0.42, 0.32), hi: 0.3, env: 1.0 };
+    var EVE = { dir: new THREE.Vector3(-2.3, 1.15, 1.2), sun: new THREE.Color(1.0, 0.6, 0.34), si: 0.7, sky: new THREE.Color(0.5, 0.62, 0.86), gnd: new THREE.Color(0.26, 0.25, 0.26), hi: 0.55, env: 1.0 };
     var curK = -1, tmpV = new THREE.Vector3();
     function setMood(k) {
       k = clamp(+k || 0, 0, 1);
@@ -763,7 +765,7 @@
     var bb = new THREE.Mesh(bg, bbMat); bb.castShadow = true; bb.receiveShadow = true; bb.name = 'baseboard'; room.add(bb);
 
     // sunlight patch: window projected along the sun direction (affine → exact per-vertex UV)
-    var C = new THREE.Vector3(1.0, 0, -0.62), U = new THREE.Vector3().crossVectors(SUN_DIR, new THREE.Vector3(0, 1, 0)).normalize(), V = new THREE.Vector3().crossVectors(U, SUN_DIR).normalize();
+    var C = new THREE.Vector3(1.05, 0, -0.86), U = new THREE.Vector3().crossVectors(SUN_DIR, new THREE.Vector3(0, 1, 0)).normalize(), V = new THREE.Vector3().crossVectors(U, SUN_DIR).normalize();
     var winW = 0.95, winH = 1.15, tmp = new THREE.Vector3();
     function patchUV(g) {
       var p = g.attributes.position, uv1 = [];
@@ -776,25 +778,33 @@
     var patchMats = [];
     function patchMesh(g, map, cosF) {
       patchUV(g);
-      var m = new THREE.MeshBasicMaterial({ map: map || null, color: 0xffffff, alphaMap: S.windowMask, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
+      // Lambert lit by the sun only (ambient/hemisphere removed) → extra direct sunlight that respects shadows
+      var m = new THREE.MeshLambertMaterial({ map: map || null, color: 0xffffff, alphaMap: S.windowMask, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
+      m.onBeforeCompile = function (sh) {
+        var chunk = THREE.ShaderChunk.lights_fragment_begin
+          .replace('vec3 irradiance = getAmbientLightIrradiance( ambientLightColor );', 'vec3 irradiance = vec3( 0.0 );')
+          .replace('irradiance += getHemisphereLightIrradiance( hemisphereLights[ i ], geometryNormal );', '');
+        sh.fragmentShader = sh.fragmentShader.replace('#include <lights_fragment_begin>', chunk);
+      };
+      m.customProgramCacheKey = function () { return 'sunPatch'; };
       m.userData.cosF = cosF; patchMats.push(m);
-      var me = new THREE.Mesh(g, m); me.renderOrder = 1; room.add(me); return me;
+      var me = new THREE.Mesh(g, m); me.renderOrder = 1; me.receiveShadow = true; room.add(me); return me;
     }
     var pf = new THREE.PlaneGeometry(3.4, 2.2); pf.rotateX(-Math.PI / 2); pf.translate(1.1, 0.0004, -0.15);
     floorUV(pf);
-    patchMesh(pf, S.floorMap, -SUN_DIR.y);
+    patchMesh(pf, S.floorMap, 1);
     var pw = new THREE.PlaneGeometry(3.4, 2.0); pw.translate(1.1, 1.0, DIM.wallZ + 0.0004);
-    patchMesh(pw, null, -SUN_DIR.z * 0.85);
+    patchMesh(pw, null, 1);
     var pb = new THREE.PlaneGeometry(3.4, bh - 0.004); pb.translate(1.1, (bh - 0.004) / 2, DIM.wallZ + bd + 0.0004);
-    patchMesh(pb, null, -SUN_DIR.z * 0.85);
-    var cWarm = new THREE.Color(1.0, 0.9, 0.76), cOr = new THREE.Color(1.0, 0.5, 0.2), cTmp = new THREE.Color();
+    patchMesh(pb, null, 1);
+    var cWarm = new THREE.Color(1.0, 0.95, 0.86), cOr = new THREE.Color(1.0, 0.62, 0.36), cTmp = new THREE.Color();
     room.userData.setMood = function (k) {
       k = clamp(+k || 0, 0, 1);
-      var s = (1 - smooth(0.25, 1.0, k)) * 0.8;
+      var s = (1 - smooth(0.25, 1.0, k)) * 1.1;
       cTmp.copy(cWarm).lerp(cOr, smooth(0, 0.7, k));
       for (var i = 0; i < patchMats.length; i++) {
         var m = patchMats[i];
-        m.color.copy(cTmp).multiplyScalar(s * m.userData.cosF * (m.map ? 1.0 : 0.7));
+        m.color.copy(cTmp).multiplyScalar(s * (m.map ? 1.0 : 0.6));
         m.visible = s > 0.001;
       }
     };
@@ -871,7 +881,8 @@
     var sideA = makeSide(1, 'sideA'), sideB = makeSide(-1, 'sideB');
     var boards = [];
     for (var i = 0; i < 3; i++) {
-      var b = makeBoard([DIM.boardLen, DIM.T, DIM.D], 0, 1, 2, 'board' + i);
+      // +3mm each end: the board sits in the side's dado (hides light leaks through the rounded edges)
+      var b = makeBoard([DIM.boardLen + 0.006, DIM.T, DIM.D], 0, 1, 2, 'board' + i);
       b.userData.home = { pos: new THREE.Vector3(0, DIM.boardY[i], 0), quat: new THREE.Quaternion() };
       addGlow(b); boards.push(b);
     }
@@ -909,10 +920,10 @@
   P.makeLedSpot = function () {
     ensure();
     var g = new THREE.PlaneGeometry(2, 2); g.rotateX(-Math.PI / 2);
-    var mat = new THREE.MeshBasicMaterial({ map: S.ledTex, color: new THREE.Color(0.85, 0.93, 1.0), blending: THREE.AdditiveBlending, transparent: true, depthWrite: false, toneMapped: false, opacity: 0.6, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
+    var mat = new THREE.MeshBasicMaterial({ map: S.ledTex, color: new THREE.Color(0.85, 0.93, 1.0), blending: THREE.AdditiveBlending, transparent: true, depthWrite: false, toneMapped: false, opacity: 0.45, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
     var m = new THREE.Mesh(g, mat); m.renderOrder = 5;
     var grp = new THREE.Group(); grp.name = 'ledSpot'; grp.add(m);
-    grp.userData.setStrength = function (k) { k = clamp(+k || 0, 0, 1); mat.opacity = 0.6 * k; m.visible = k > 0.001; };
+    grp.userData.setStrength = function (k) { k = clamp(+k || 0, 0, 1); mat.opacity = 0.45 * k; m.visible = k > 0.001; };
     return grp;
   };
 
