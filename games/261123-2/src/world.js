@@ -302,14 +302,20 @@ export function create(G) {
     const im = new THREE.InstancedMesh(g, mat, N);
     const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), v = new THREE.Vector3(), s = new THREE.Vector3();
     const col = new THREE.Color();
-    let n = 0, guard = 0;
-    while (n < N && guard++ < 5000) {
-      // biased toward the back and the tree
+    let n = 0, guard = 0, clump = 0, cx = 0, cz = 0;
+    while (n < N && guard++ < 8000) {
+      // biased toward the back and the tree, in loose clumps
       let x, z;
+      if (clump > 0) {
+        clump--;
+        x = cx + (rnd() - 0.5) * 0.7; z = cz + (rnd() - 0.5) * 0.5;
+      } else {
       const pick = rnd();
       if (pick < 0.30) { const a = rnd() * Math.PI * 2, r = 0.45 + Math.pow(rnd(), 1.5) * 2.2; x = -1.55 + Math.cos(a) * r; z = -2.3 + Math.sin(a) * r; }
       else if (pick < 0.55) { x = (rnd() * 2 - 1) * 7.5; z = -7.5 + Math.pow(rnd(), 1.6) * 1.6; }
       else { x = (rnd() * 2 - 1) * 6.5; z = -7.8 + rnd() * 10; }
+        if (rnd() < 0.45) { cx = x; cz = z; clump = 2 + Math.floor(rnd() * 6); }
+      }
       const ex = x / 1.30, ez = (z - 0.05) / 1.45;
       if (ex * ex + ez * ez < 1.45) continue; // keep the play area clear
       if (Math.hypot(x, z) < 2.0) continue;
@@ -324,8 +330,8 @@ export function create(G) {
       im.setMatrixAt(n, m4);
       const c = Math.floor(rnd() * 6);
       cell[n * 2] = (c % 3) / 3; cell[n * 2 + 1] = c < 3 ? 0.5 : 0;
-      const b = 0.55 + rnd() * 0.3;
-      im.setColorAt(n, col.setRGB(b, b * (0.92 + rnd() * 0.08), b * (0.85 + rnd() * 0.1)));
+      const b = 0.42 + rnd() * 0.33, dry = rnd();
+      im.setColorAt(n, col.setRGB(b, b * (0.80 + dry * 0.12), b * (0.66 + dry * 0.12)));
       n++;
     }
     im.count = n;
@@ -518,7 +524,8 @@ export function create(G) {
       [-1, 0, 0, 2.4, 14, 0, true, true],
       [-1, 0, 0, 2.2, 10, 0, false, true],
     ];
-    const SHADOW_ONLY = [[-3.6, 5.2, -1.3, 40], [-2.6, 5.6, -2.6, 70], [-4.3, 5.0, 0.4, 15]];
+    // [ground point the dapple should fall on (x,z), height, yaw deg] — caster = point − h·(sun xz / sun y)
+    const SHADOW_ONLY = [[-0.35, -0.25, 5.0, 25], [0.75, 0.45, 5.3, 60], [-0.95, 0.85, 4.8, -10]];
     let so = 0;
     const rnd = mulberry(321);
     const tmpV = new THREE.Vector3();
@@ -528,9 +535,10 @@ export function create(G) {
       let dirX, dirZ;
       if (shadowOnly) {
         const p = SHADOW_ONLY[so++];
-        pivot.position.set(p[0], p[1], p[2]);
         const a = THREE.MathUtils.degToRad(p[3]);
         dirX = Math.cos(a); dirZ = Math.sin(a);
+        const k = p[2] / sunDir.y;
+        pivot.position.set(p[0] - sunDir.x * k - dirX * L * 0.5, p[2], p[1] - sunDir.z * k - dirZ * L * 0.5);
       } else {
         const l = limbs[li];
         tmpV.copy(l.p0).lerp(l.p1, t);
@@ -626,9 +634,9 @@ export function create(G) {
     const geo = mergeGeos(parts);
     let map = null, nmap = null;
     if (tex.stone) { map = tex.stone.clone(); map.wrapS = map.wrapT = THREE.RepeatWrapping; map.needsUpdate = true; nmap = normalFrom(map, 3); }
-    const mat = new THREE.MeshStandardMaterial({ map, normalMap: nmap, roughness: 0.9, metalness: 0, vertexColors: true, color: new THREE.Color(0.80, 0.74, 0.66) });
+    const mat = new THREE.MeshStandardMaterial({ map, normalMap: nmap, roughness: 0.9, metalness: 0, vertexColors: true, color: new THREE.Color(1.0, 0.93, 0.83) });
     if (nmap) mat.normalScale.set(1.3, 1.3);
-    tweakMap(mat, 0.8, 'world-stone-v1');
+    tweakMap(mat, 0.75, 'world-stone-v1');
     const stones = new THREE.Mesh(geo, mat);
     stones.castShadow = true; stones.receiveShadow = true;
     stones.name = 'stones';

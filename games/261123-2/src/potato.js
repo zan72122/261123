@@ -887,7 +887,6 @@ export function create(G) {
       // long axis across the view, swinging with the motion
       _e.set(clamp(vz * 0.22, -0.45, 0.45), 0.08, clamp(-vx * 0.25, -0.5, 0.5));
       _rq.setFromEuler(_e);
-      if (P.state === 'held') { _wq.copy(P.rollQ); _tv.set(1, 0, 0).applyQuaternion(_wq); }
       // carry orientation: keep current roll around the long axis, level the long axis along X
       const ax = _tv.set(1, 0, 0).applyQuaternion(P.carryQ);
       _wq.setFromUnitVectors(ax, X).multiply(P.carryQ); // levelled
