@@ -100,7 +100,7 @@ export function placeBag(ctx, hanging) {
     ctx.scene.add(bag.group);
     bag.group.position.fromArray(L.BAG_START);
     bag.group.rotation.set(0, L.BAG_YAW, 0);
-    ctx.hanger.clips[2].setLoad(0);
+    if (ctx.hanger) ctx.hanger.clips[2].setLoad(0);
   }
 }
 
@@ -277,6 +277,7 @@ export function createSim(ctx) {
     release() { grab = null; },      // drop a held handle without side effects (stage exit)
     update(dt) {
       const s = st(), w = s.water, basin = ctx.basin, faucet = ctx.faucet, audio = ctx.audio;
+      if (!faucet) return;   // still being built (opening stage only: the tap is shut and the basin empty there)
       const open = sim.open();
       const target = open < 0.03 ? 0 : Math.pow(open, 0.6);
       flow += (target - flow) * (1 - Math.exp(-dt * 6));

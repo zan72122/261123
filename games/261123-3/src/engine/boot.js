@@ -188,7 +188,28 @@ function bootInner(opts) {
 
   ctx.hint = createHint(ctx, vp, guard);
 
+  // --- background build: opts.later(ctx) returns build steps for things the first stage doesn't show.
+  // They run one per frame after the first frame is on screen (paused while a finger is down), and any
+  // that are left run at once before a stage change, or before the first stage if it isn't marked `lite`.
+  let later = [];
+  if (typeof opts.later === 'function') {
+    const r = guard(() => opts.later(ctx), 'later');
+    if (Array.isArray(r)) later = r.filter((f) => typeof f === 'function');
+  }
+  let warmQueued = false;
+  function runLater() {
+    const fn = later.shift();
+    guard(fn, 'later');
+    if (!later.length) {
+      renderer.shadowMap.needsUpdate = true;
+      call(flow.current, 'loaded', ctx);
+      queueWarm();
+    }
+  }
+  function flushLater() { while (later.length) runLater(); }
+
   function enterStage(i, instant) {
+    if (later.length && !(!flow.current && stages[i] && stages[i].lite)) flushLater();
     const prev = flow.current;
     if (prev) call(prev, 'exit', ctx);
     ctx.tl.kill();
@@ -344,9 +365,11 @@ function bootInner(opts) {
     sigHard = false;
   }
 
-  // --- warm-up: compile every material and upload every texture once, right after the first frame,
-  // so later stages (props that are hidden until then, new fx) don't stall on a shader compile or a
-  // texture upload mid-animation — the main source of hitches on iOS.
+  // --- warm-up: compile every material and upload every texture ahead of use, so later stages (props
+  // that are hidden until then, new fx) don't stall on a shader compile or a texture upload mid-animation —
+  // the main source of hitches on iOS. It is spread over frames: each frame issues the compile of a couple
+  // of new programs, and the next frame (when the driver has usually finished them in the background)
+  // takes them into use, instead of one long freeze right after the first frame.
   // three's shadow pass shares one depth material between plain and instanced casters, which forces a
   // program re-derivation on every switch; instanced casters get their own (identical) depth material.
   const instDepth = {};
@@ -356,25 +379,42 @@ function bootInner(opts) {
     const k = o.instanceColor ? 'c' : 'n';
     o.customDepthMaterial = instDepth[k] || (instDepth[k] = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking }));
   }
-  function warmUp() {
-    const hiddenObjs = [], texs = new Set();
+  const parallelCompile = !!(renderer.extensions && renderer.extensions.has && renderer.extensions.has('KHR_parallel_shader_compile'));
+  let warmList = [], warmIdx = 0, warmPending = null;
+  function queueWarm() {
+    if (warmQueued) return;
+    warmQueued = true;
     scene.traverse((o) => {
       instancedDepth(o);
-      if (!o.visible) { hiddenObjs.push(o); o.visible = true; }
-      const mats = o.material ? (Array.isArray(o.material) ? o.material : [o.material]) : null;
-      if (!mats) return;
-      for (const m of mats) {
-        if (!m) continue;
-        for (const k in m) { const v = m[k]; if (v && v.isTexture && !v.isRenderTargetTexture) texs.add(v); }
-        if (m.uniforms) for (const k in m.uniforms) { const v = m.uniforms[k] && m.uniforms[k].value; if (v && v.isTexture && !v.isRenderTargetTexture) texs.add(v); }
-      }
+      if ((o.isMesh || o.isPoints || o.isLine || o.isSprite) && o.material) warmList.push(o);
     });
-    try {
-      if (typeof renderer.compileAsync === 'function') renderer.compileAsync(scene, camera).catch((e) => report(e, 'warmUp'));
-      else renderer.compile(scene, camera);
-    } catch (e) { report(e, 'warmUp'); }
-    for (const o of hiddenObjs) o.visible = false;
-    if (typeof renderer.initTexture === 'function') for (const t of texs) guard(() => renderer.initTexture(t), 'warmUp.tex');
+  }
+  const matsOf = (o) => (Array.isArray(o.material) ? o.material : [o.material]);
+  // returns true while there is warm-up work left
+  function warmStep() {
+    if (warmPending) {
+      for (const m of warmPending) {
+        const p = renderer.properties.get(m).currentProgram;
+        if (!p) continue;
+        if (parallelCompile && !p.isReady()) return true;      // still compiling in the background: wait
+      }
+      for (const m of warmPending) { const p = renderer.properties.get(m).currentProgram; if (p) guard(() => p.getUniforms(), 'warmUp'); }
+      warmPending = null;
+    }
+    if (warmIdx >= warmList.length) return false;
+    const t0 = performance.now(), n0 = renderer.info.programs.length, mats = new Set();
+    while (warmIdx < warmList.length && renderer.info.programs.length - n0 < 2 && performance.now() - t0 < 4) {
+      const o = warmList[warmIdx++];
+      for (const m of matsOf(o)) {
+        if (!m) continue;
+        mats.add(m);
+        for (const k in m) { const v = m[k]; if (v && v.isTexture && !v.isRenderTargetTexture) guard(() => renderer.initTexture(v), 'warmUp.tex'); }
+        if (m.uniforms) for (const k in m.uniforms) { const v = m.uniforms[k] && m.uniforms[k].value; if (v && v.isTexture && !v.isRenderTargetTexture) guard(() => renderer.initTexture(v), 'warmUp.tex'); }
+      }
+      guard(() => renderer.compile(o, camera, scene), 'warmUp');
+    }
+    if (mats.size) warmPending = mats;
+    return true;
   }
   let frameNo = 0;
 
@@ -420,7 +460,13 @@ function bootInner(opts) {
       guard(shadowCheck, 'shadowCheck');
       guard(() => renderer.render(scene, camera), 'render');
       dynres(realDt);
-      if (++frameNo === 2) { guard(warmUp, 'warmUp'); grace = Math.max(grace, 1); }
+      // background work starts once the first frames are on screen, and pauses while a finger is down
+      if (++frameNo === 2 && !later.length) queueWarm();
+      if (frameNo > 2 && !input.down) {
+        if (later.length) { runLater(); grace = Math.max(grace, 0.5); }
+        else if (warmList.length && guard(warmStep, 'warmUp')) grace = Math.max(grace, 0.5);
+        else if (warmList.length) { warmList = []; grace = Math.max(grace, 1); }
+      }
       saver.tick();
       window.__ready = true;
     } catch (e) { report(e, 'frame'); }

@@ -407,223 +407,235 @@ export function createWorld(ctx) {
     const m = new THREE.Mesh(geo, concMat); m.receiveShadow = true; m.name = 'terrace'; group.add(m);
   }
 
-  // --- lawn
-  const grassTex = makeGrassTex(512);
+  // Parts that are not in the opening shot are built a little later, in the background (see `later`):
+  // the first frame only needs the terrace, the lights and the fog.
   const HEDGE = { px: 6.3, pz: 5.95, nx: -4.9, hx: 1.25 }; // inner (garden-facing) faces of the three hedges
-  const lawnMat = new THREE.MeshStandardMaterial({ map: grassTex, roughness: 0.95, metalness: 0 });
-  lawnMat.onBeforeCompile = (sh) => {
-    injectWPos(sh);
-    sh.uniforms.uNoise = { value: noiseTex };
-    sh.fragmentShader = sh.fragmentShader.replace('varying vec3 vWPos;', 'varying vec3 vWPos;\nuniform sampler2D uNoise;')
-      .replace('#include <map_fragment>', `#include <map_fragment>
-        float ln1 = texture2D(uNoise, vWPos.xz * 0.075).r, ln2 = texture2D(uNoise, vWPos.xz * 0.23 + 0.37).g;
-        vec3 ltint = mix(vec3(0.82, 0.86, 0.66), vec3(1.1, 1.06, 0.9), ln1) * (0.88 + 0.24 * ln2);
-        float dh = min(min(${HEDGE.px.toFixed(2)} - vWPos.x, ${HEDGE.pz.toFixed(2)} - vWPos.z), vWPos.x - (${HEDGE.nx.toFixed(2)}));
-        float dt = max(max(abs(vWPos.x) - ${T.maxX.toFixed(2)}, vWPos.z - ${T.maxZ.toFixed(2)}), 0.0);
-        ltint *= mix(0.5, 1.0, smoothstep(0.0, 0.55, dh)) * mix(0.85, 1.0, smoothstep(0.0, 0.12, dt));
-        diffuseColor.rgb *= ltint;`);
-  };
-  lawnMat.customProgramCacheKey = () => 'world-lawn';
-  {
-    const x0 = -6.5, x1 = 8, z0 = T.minZ, z1 = 8;
-    const geo = new THREE.PlaneGeometry(x1 - x0, z1 - z0).rotateX(-Math.PI / 2).translate((x0 + x1) / 2, -0.015, (z0 + z1) / 2);
-    worldUV(geo, 0.65);
-    const m = new THREE.Mesh(geo, lawnMat); m.receiveShadow = true; m.name = 'lawn'; group.add(m);
-  }
+  let grass = null, lowQ = low;
 
-  // --- grass tufts (instanced)
-  let grass;
-  {
-    const rnd = makeRng(91), blades = [];
-    for (let b = 0; b < 5; b++) {
-      const a = (b / 5) * Math.PI * 2 + rnd() * 0.8, r = 0.004 + rnd() * 0.012, h = 0.035 + rnd() * 0.045, w = 0.0035 + rnd() * 0.0025;
-      const bx = Math.cos(a) * r, bz = Math.sin(a) * r, lean = 0.25 + rnd() * 0.45, ox = Math.cos(a) * h * lean, oz = Math.sin(a) * h * lean;
-      const px = -Math.sin(a) * w, pz = Math.cos(a) * w; // blade width axis
-      const P = [[bx - px, 0, bz - pz], [bx + px, 0, bz + pz], [bx - px * 0.7 + ox * 0.35, h * 0.55, bz - pz * 0.7 + oz * 0.35], [bx + px * 0.7 + ox * 0.35, h * 0.55, bz + pz * 0.7 + oz * 0.35], [bx + ox, h, bz + oz]];
-      blades.push({ P, tri: [[0, 1, 2], [1, 3, 2], [2, 3, 4]] });
-    }
-    const pos = [], nor = [], colA = [], hA = [];
-    for (const bl of blades) for (const tr of bl.tri) for (const vi of tr) {
-      const p = bl.P[vi]; pos.push(...p); const hf = vi < 2 ? 0 : vi < 4 ? 0.55 : 1;
-      nor.push(p[0] * 3, 1, p[2] * 3); const c = 0.42 + 0.58 * hf; colA.push(c, c, c * 0.95); hA.push(hf);
-    }
-    const geo = new THREE.BufferGeometry();
-    geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-    const nn = new THREE.Float32BufferAttribute(nor, 3); geo.setAttribute('normal', nn); geo.normalizeNormals();
-    geo.setAttribute('color', new THREE.Float32BufferAttribute(colA, 3));
-    geo.setAttribute('aH', new THREE.Float32BufferAttribute(hA, 1));
-    const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.8, metalness: 0, side: THREE.DoubleSide });
-    mat.onBeforeCompile = (sh) => {
-      sh.uniforms.uTime = uTime;
-      sh.vertexShader = 'attribute float aH;\nuniform float uTime;\n' + sh.vertexShader.replace('#include <begin_vertex>', `#include <begin_vertex>
-        #ifdef USE_INSTANCING
-          vec2 ip = instanceMatrix[3].xz;
-        #else
-          vec2 ip = vec2(0.0);
-        #endif
-        float sw = sin(uTime * 1.6 + ip.x * 3.1 + ip.y * 2.3) * 0.6 + sin(uTime * 2.7 + ip.x * 5.3 - ip.y * 1.7) * 0.4;
-        transformed.xz += vec2(sw, sw * 0.6) * aH * aH * 0.005;`);
-      sh.fragmentShader = sh.fragmentShader.replace('float faceDirection = gl_FrontFacing ? 1.0 : - 1.0;', 'float faceDirection = 1.0;');
+  function buildLawn() {
+    // --- lawn
+    const grassTex = makeGrassTex(512);
+    const lawnMat = new THREE.MeshStandardMaterial({ map: grassTex, roughness: 0.95, metalness: 0 });
+    lawnMat.onBeforeCompile = (sh) => {
+      injectWPos(sh);
+      sh.uniforms.uNoise = { value: noiseTex };
+      sh.fragmentShader = sh.fragmentShader.replace('varying vec3 vWPos;', 'varying vec3 vWPos;\nuniform sampler2D uNoise;')
+        .replace('#include <map_fragment>', `#include <map_fragment>
+          float ln1 = texture2D(uNoise, vWPos.xz * 0.075).r, ln2 = texture2D(uNoise, vWPos.xz * 0.23 + 0.37).g;
+          vec3 ltint = mix(vec3(0.82, 0.86, 0.66), vec3(1.1, 1.06, 0.9), ln1) * (0.88 + 0.24 * ln2);
+          float dh = min(min(${HEDGE.px.toFixed(2)} - vWPos.x, ${HEDGE.pz.toFixed(2)} - vWPos.z), vWPos.x - (${HEDGE.nx.toFixed(2)}));
+          float dt = max(max(abs(vWPos.x) - ${T.maxX.toFixed(2)}, vWPos.z - ${T.maxZ.toFixed(2)}), 0.0);
+          ltint *= mix(0.5, 1.0, smoothstep(0.0, 0.55, dh)) * mix(0.85, 1.0, smoothstep(0.0, 0.12, dt));
+          diffuseColor.rgb *= ltint;`);
     };
-    mat.customProgramCacheKey = () => 'world-grass';
-    // placements
-    const pts = [];
-    const outside = (x, z) => x > T.maxX + 0.005 || x < T.minX - 0.005 || z > T.maxZ + 0.005;
-    const add = (x, z, s) => { if (outside(x, z) && x < HEDGE.px - 0.02 && x > HEDGE.nx + 0.02 && z < HEDGE.pz - 0.02) pts.push([x, z, s]); };
-    const fringe = (n, fn) => { for (let i = 0; i < n; i++) { const u = rnd(), d = 0.006 + Math.pow(rnd(), 2.2) * 0.3; fn(u, d, 0.75 + rnd() * 0.6 * (1 - d * 2.5)); } };
-    fringe(520, (u, d, s) => add(T.maxX + d, T.minZ + 0.03 + u * (T.maxZ - T.minZ), s));
-    fringe(300, (u, d, s) => add(T.minX - d, T.minZ + 0.03 + u * (T.maxZ - T.minZ), s));
-    fringe(480, (u, d, s) => add(T.minX + u * (T.maxX - T.minX), T.maxZ + d, s));
-    for (let i = 0; i < 1100; i++) add(T.maxX + 0.05 + Math.pow(rnd(), 1.7) * (HEDGE.px - T.maxX - 0.1), T.minZ + 0.05 + rnd() * 6.2, 0.45 + rnd() * 0.35);
-    for (let i = 0; i < 160; i++) add(HEDGE.px - 0.03 - Math.pow(rnd(), 2) * 0.25, T.minZ + rnd() * 7.5, 1.0 + rnd() * 0.8);
-    for (let i = 0; i < 120; i++) add(T.minX + (rnd() - 0.5) * 6, T.maxZ + 0.1 + rnd() * 3.5, 0.8 + rnd() * 0.4);
-    for (let i = pts.length - 1; i > 0; i--) { const j = Math.floor(rnd() * (i + 1)); const t = pts[i]; pts[i] = pts[j]; pts[j] = t; }
-    grass = new THREE.InstancedMesh(geo, mat, pts.length);
-    const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), sc = new THREE.Vector3(), p = new THREE.Vector3(), c = new THREE.Color();
-    const gA = new THREE.Color(0x55742b), gB = new THREE.Color(0x8ea648), gC = new THREE.Color(0x9a9450);
-    pts.forEach(([x, z, s], i) => {
-      e.set((rnd() - 0.5) * 0.25, rnd() * Math.PI * 2, (rnd() - 0.5) * 0.25); q.setFromEuler(e);
-      sc.set(s * (0.8 + rnd() * 0.4), s * (0.75 + rnd() * 0.5), s * (0.8 + rnd() * 0.4));
-      grass.setMatrixAt(i, m4.compose(p.set(x, -0.015, z), q, sc));
-      c.copy(gA).lerp(gB, rnd()); if (rnd() < 0.12) c.lerp(gC, 0.6); c.multiplyScalar(0.85 + rnd() * 0.3);
-      grass.setColorAt(i, c);
-    });
-    grass.userData.full = pts.length;
-    grass.receiveShadow = true; grass.castShadow = false; grass.name = 'grass';
-    grass.computeBoundingSphere();
-    group.add(grass);
-  }
-
-  // --- house wall
-  {
-    const sid = makeSidingTex(512, 256);
-    const x0 = -7, x1 = 7.2, y0 = 0.3, y1 = 3.2, z = L.WALL_Z;
-    const geo = new THREE.PlaneGeometry(x1 - x0, y1 - y0, 1, 8).translate((x0 + x1) / 2, (y0 + y1) / 2, z);
-    const uv = geo.attributes.uv, p = geo.attributes.position, cols = [];
-    for (let i = 0; i < p.count; i++) {
-      uv.setXY(i, p.getX(i) / 1.2, (p.getY(i) - y0) / 0.912);
-      const k = 0.86 + 0.14 * smooth(y0, 1.3, p.getY(i)); cols.push(k, k * 0.995, k * 0.985);
+    lawnMat.customProgramCacheKey = () => 'world-lawn';
+    {
+      const x0 = -6.5, x1 = 8, z0 = T.minZ, z1 = 8;
+      const geo = new THREE.PlaneGeometry(x1 - x0, z1 - z0).rotateX(-Math.PI / 2).translate((x0 + x1) / 2, -0.015, (z0 + z1) / 2);
+      worldUV(geo, 0.65);
+      const m = new THREE.Mesh(geo, lawnMat); m.receiveShadow = true; m.name = 'lawn'; group.add(m);
     }
-    geo.setAttribute('color', new THREE.Float32BufferAttribute(cols, 3));
-    const mat = new THREE.MeshStandardMaterial({ map: sid.map, normalMap: sid.normalMap, normalScale: new THREE.Vector2(0.8, 0.8), roughness: 0.78, metalness: 0, vertexColors: true });
-    const m = new THREE.Mesh(geo, mat); m.receiveShadow = true; m.name = 'houseWall'; group.add(m);
-    // foundation band (mortar grey)
-    const fgeo = worldUV(new THREE.BoxGeometry(x1 - x0, 0.36, 0.06).translate((x0 + x1) / 2, 0.12, z - 0.005), 1.5, 0.37, 0.21);
-    const fmat = new THREE.MeshStandardMaterial({ map: conc.map, normalMap: conc.normalMap, roughnessMap: conc.roughnessMap, color: 0xcacbcc, roughness: 1, metalness: 0, normalScale: new THREE.Vector2(0.4, 0.4) });
-    const fm = new THREE.Mesh(fgeo, fmat); fm.receiveShadow = true; group.add(fm);
-    // fixtures: flashing, window frame, downspout (one merged mesh, vertex coloured)
-    const keep = ['position', 'normal', 'color'];
-    const parts = [];
-    const box = (w, h, d, x, y, zz, col) => parts.push(stripTo(vcolor(new THREE.BoxGeometry(w, h, d).translate(x, y, zz), col), keep));
-    box(x1 - x0, 0.022, 0.05, (x0 + x1) / 2, 0.3, z + 0.02, 0x8e9092);   // 水切り flashing
-    const wx = -1.45, wy0 = 1.45, wy1 = 2.35, ww = 1.2, fr = 0.045, alu = 0xb9b8b2;
-    box(ww + fr * 2, fr, 0.07, wx, wy0 - fr / 2, z + 0.03, alu); box(ww + fr * 2, fr, 0.07, wx, wy1 + fr / 2, z + 0.03, alu);
-    box(fr, wy1 - wy0, 0.07, wx - ww / 2 - fr / 2, (wy0 + wy1) / 2, z + 0.03, alu); box(fr, wy1 - wy0, 0.07, wx + ww / 2 + fr / 2, (wy0 + wy1) / 2, z + 0.03, alu);
-    box(0.03, wy1 - wy0, 0.05, wx, (wy0 + wy1) / 2, z + 0.035, alu);
-    box(ww + 0.16, 0.025, 0.11, wx, wy0 - fr - 0.012, z + 0.05, 0xa9a8a2);  // sill
-    const dsx = 2.32, dsz = z + 0.075;
-    const curve = new THREE.CatmullRomCurve3([new THREE.Vector3(dsx, 3.25, dsz), new THREE.Vector3(dsx, 0.4, dsz), new THREE.Vector3(dsx, 0.2, dsz + 0.03), new THREE.Vector3(dsx, 0.1, dsz + 0.12), new THREE.Vector3(dsx, 0.075, dsz + 0.2)], false, 'centripetal');
-    parts.push(stripTo(vcolor(new THREE.TubeGeometry(curve, 40, 0.03, 12, false), 0xd2ccbe), keep));
-    for (const y of [0.95, 1.95, 2.95]) box(0.075, 0.03, 0.1, dsx, y, z + 0.05, 0xc9c3b4);
-    const fmesh = new THREE.Mesh(mergeGeometries(parts), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.45, metalness: 0.35 }));
-    fmesh.castShadow = true; fmesh.receiveShadow = true; group.add(fmesh);
-    const glass = new THREE.Mesh(new THREE.PlaneGeometry(ww, wy1 - wy0).translate(wx, (wy0 + wy1) / 2, z + 0.02),
-      new THREE.MeshStandardMaterial({ color: 0xc4cacd, roughness: 0.3, metalness: 0.0 }));
-    group.add(glass);
-  }
 
-  // --- hedges: dark core boxes + instanced alpha-tested leaf cards
-  {
-    const leaf = makeLeafTex(512);
-    const th = 0.65;
-    const cores = [
-      { x0: HEDGE.px, x1: HEDGE.px + th, z0: T.minZ, z1: HEDGE.pz + th, face: [-1, 0, 0], dens: 60, top: 40, H: HEDGE.hx },
-      { x0: HEDGE.nx - th, x1: HEDGE.px, z0: HEDGE.pz, z1: HEDGE.pz + th, face: [0, 0, -1], dens: 26, top: 18, H: 1.5 },
-      { x0: HEDGE.nx - th, x1: HEDGE.nx, z0: T.minZ, z1: HEDGE.pz, face: [1, 0, 0], dens: 26, top: 18, H: 1.5 },
-    ];
-    const coreGeos = cores.map((c) => new THREE.BoxGeometry(c.x1 - c.x0, c.H - 0.06, c.z1 - c.z0).translate((c.x0 + c.x1) / 2, (c.H - 0.06) / 2, (c.z0 + c.z1) / 2));
-    const coreTex = leaf.map.clone(); coreTex.repeat.set(5, 3); coreTex.needsUpdate = true;
-    const coreMat = new THREE.MeshStandardMaterial({ map: coreTex, color: 0x7a8a68, roughness: 0.9, metalness: 0 });
-    const coreMesh = new THREE.Mesh(mergeGeometries(coreGeos), coreMat); coreMesh.name = 'hedgeCore'; group.add(coreMesh);
-    const rnd = makeRng(57), cards = [];
-    const nrm = new THREE.Vector3(), up = new THREE.Vector3(0, 1, 0);
-    for (const c of cores) {
-      const H = c.H, f = new THREE.Vector3(...c.face), alongX = Math.abs(f.z) > 0.5;
-      const len = alongX ? c.x1 - c.x0 : c.z1 - c.z0;
-      const nFront = Math.round(len * H * c.dens), nTop = Math.round(len * th * c.top);
-      const fx = alongX ? null : (f.x < 0 ? c.x0 : c.x1), fz = alongX ? (f.z < 0 ? c.z0 : c.z1) : null;
-      for (let i = 0; i < nFront + nTop; i++) {
-        const u = rnd(), isTop = i >= nFront, off = -0.03 + rnd() * 0.1;
-        let x, y, z;
-        nrm.copy(isTop ? up : f);
-        if (isTop) {
-          const v = rnd();
-          x = alongX ? c.x0 + u * len : c.x0 + v * th; z = alongX ? c.z0 + v * th : c.z0 + u * len; y = H - 0.06 + off;
-          const edge = Math.min(v, 1 - v); if (edge < 0.18) { const sideN = alongX ? new THREE.Vector3(0, 0, v < 0.5 ? -1 : 1) : new THREE.Vector3(v < 0.5 ? -1 : 1, 0, 0); nrm.lerp(sideN, (0.18 - edge) / 0.18 * 0.7).normalize(); y -= (0.18 - edge) * 0.4; }
-        } else {
-          y = 0.08 + rnd() * (H - 0.14);
-          if (alongX) { x = c.x0 + u * len; z = fz + f.z * off; } else { z = c.z0 + u * len; x = fx + f.x * off; }
-          if (y > H - 0.25) nrm.lerp(up, (y - (H - 0.25)) / 0.25 * 0.6).normalize();
-        }
-        nrm.x += (rnd() - 0.5) * 0.9; nrm.y += (rnd() - 0.5) * 0.9; nrm.z += (rnd() - 0.5) * 0.9; nrm.normalize();
-        cards.push({ p: new THREE.Vector3(x, y, z), n: nrm.clone(), s: 0.26 + rnd() * 0.18, roll: rnd() * Math.PI * 2, depth: off, top: isTop || y > H - 0.3 });
+    // --- grass tufts (instanced)
+    {
+      const rnd = makeRng(91), blades = [];
+      for (let b = 0; b < 5; b++) {
+        const a = (b / 5) * Math.PI * 2 + rnd() * 0.8, r = 0.004 + rnd() * 0.012, h = 0.035 + rnd() * 0.045, w = 0.0035 + rnd() * 0.0025;
+        const bx = Math.cos(a) * r, bz = Math.sin(a) * r, lean = 0.25 + rnd() * 0.45, ox = Math.cos(a) * h * lean, oz = Math.sin(a) * h * lean;
+        const px = -Math.sin(a) * w, pz = Math.cos(a) * w; // blade width axis
+        const P = [[bx - px, 0, bz - pz], [bx + px, 0, bz + pz], [bx - px * 0.7 + ox * 0.35, h * 0.55, bz - pz * 0.7 + oz * 0.35], [bx + px * 0.7 + ox * 0.35, h * 0.55, bz + pz * 0.7 + oz * 0.35], [bx + ox, h, bz + oz]];
+        blades.push({ P, tri: [[0, 1, 2], [1, 3, 2], [2, 3, 4]] });
       }
+      const pos = [], nor = [], colA = [], hA = [];
+      for (const bl of blades) for (const tr of bl.tri) for (const vi of tr) {
+        const p = bl.P[vi]; pos.push(...p); const hf = vi < 2 ? 0 : vi < 4 ? 0.55 : 1;
+        nor.push(p[0] * 3, 1, p[2] * 3); const c = 0.42 + 0.58 * hf; colA.push(c, c, c * 0.95); hA.push(hf);
+      }
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+      const nn = new THREE.Float32BufferAttribute(nor, 3); geo.setAttribute('normal', nn); geo.normalizeNormals();
+      geo.setAttribute('color', new THREE.Float32BufferAttribute(colA, 3));
+      geo.setAttribute('aH', new THREE.Float32BufferAttribute(hA, 1));
+      const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.8, metalness: 0, side: THREE.DoubleSide });
+      mat.onBeforeCompile = (sh) => {
+        sh.uniforms.uTime = uTime;
+        sh.vertexShader = 'attribute float aH;\nuniform float uTime;\n' + sh.vertexShader.replace('#include <begin_vertex>', `#include <begin_vertex>
+          #ifdef USE_INSTANCING
+            vec2 ip = instanceMatrix[3].xz;
+          #else
+            vec2 ip = vec2(0.0);
+          #endif
+          float sw = sin(uTime * 1.6 + ip.x * 3.1 + ip.y * 2.3) * 0.6 + sin(uTime * 2.7 + ip.x * 5.3 - ip.y * 1.7) * 0.4;
+          transformed.xz += vec2(sw, sw * 0.6) * aH * aH * 0.005;`);
+        sh.fragmentShader = sh.fragmentShader.replace('float faceDirection = gl_FrontFacing ? 1.0 : - 1.0;', 'float faceDirection = 1.0;');
+      };
+      mat.customProgramCacheKey = () => 'world-grass';
+      // placements
+      const pts = [];
+      const outside = (x, z) => x > T.maxX + 0.005 || x < T.minX - 0.005 || z > T.maxZ + 0.005;
+      const add = (x, z, s) => { if (outside(x, z) && x < HEDGE.px - 0.02 && x > HEDGE.nx + 0.02 && z < HEDGE.pz - 0.02) pts.push([x, z, s]); };
+      const fringe = (n, fn) => { for (let i = 0; i < n; i++) { const u = rnd(), d = 0.006 + Math.pow(rnd(), 2.2) * 0.3; fn(u, d, 0.75 + rnd() * 0.6 * (1 - d * 2.5)); } };
+      fringe(520, (u, d, s) => add(T.maxX + d, T.minZ + 0.03 + u * (T.maxZ - T.minZ), s));
+      fringe(300, (u, d, s) => add(T.minX - d, T.minZ + 0.03 + u * (T.maxZ - T.minZ), s));
+      fringe(480, (u, d, s) => add(T.minX + u * (T.maxX - T.minX), T.maxZ + d, s));
+      for (let i = 0; i < 1100; i++) add(T.maxX + 0.05 + Math.pow(rnd(), 1.7) * (HEDGE.px - T.maxX - 0.1), T.minZ + 0.05 + rnd() * 6.2, 0.45 + rnd() * 0.35);
+      for (let i = 0; i < 160; i++) add(HEDGE.px - 0.03 - Math.pow(rnd(), 2) * 0.25, T.minZ + rnd() * 7.5, 1.0 + rnd() * 0.8);
+      for (let i = 0; i < 120; i++) add(T.minX + (rnd() - 0.5) * 6, T.maxZ + 0.1 + rnd() * 3.5, 0.8 + rnd() * 0.4);
+      for (let i = pts.length - 1; i > 0; i--) { const j = Math.floor(rnd() * (i + 1)); const t = pts[i]; pts[i] = pts[j]; pts[j] = t; }
+      grass = new THREE.InstancedMesh(geo, mat, pts.length);
+      const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), sc = new THREE.Vector3(), p = new THREE.Vector3(), c = new THREE.Color();
+      const gA = new THREE.Color(0x55742b), gB = new THREE.Color(0x8ea648), gC = new THREE.Color(0x9a9450);
+      pts.forEach(([x, z, s], i) => {
+        e.set((rnd() - 0.5) * 0.25, rnd() * Math.PI * 2, (rnd() - 0.5) * 0.25); q.setFromEuler(e);
+        sc.set(s * (0.8 + rnd() * 0.4), s * (0.75 + rnd() * 0.5), s * (0.8 + rnd() * 0.4));
+        grass.setMatrixAt(i, m4.compose(p.set(x, -0.015, z), q, sc));
+        c.copy(gA).lerp(gB, rnd()); if (rnd() < 0.12) c.lerp(gC, 0.6); c.multiplyScalar(0.85 + rnd() * 0.3);
+        grass.setColorAt(i, c);
+      });
+      grass.userData.full = pts.length;
+      grass.receiveShadow = true; grass.castShadow = false; grass.name = 'grass';
+      grass.computeBoundingSphere();
+      group.add(grass);
     }
-    const cardMat = new THREE.MeshStandardMaterial({ map: leaf.map, normalMap: leaf.normalMap, normalScale: new THREE.Vector2(0.9, 0.9), alphaTest: 0.5, side: THREE.DoubleSide, roughness: 0.62, metalness: 0 });
-    const im = new THREE.InstancedMesh(new THREE.PlaneGeometry(1, 1), cardMat, cards.length);
-    const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), q2 = new THREE.Quaternion(), zf = new THREE.Vector3(0, 0, 1), sc = new THREE.Vector3(), col = new THREE.Color();
-    cards.forEach((cd, i) => {
-      q.setFromUnitVectors(zf, cd.n); q2.setFromAxisAngle(zf, cd.roll); q.multiply(q2);
-      im.setMatrixAt(i, m4.compose(cd.p, q, sc.set(cd.s, cd.s, cd.s)));
-      const k = (0.7 + (cd.depth + 0.03) / 0.1 * 0.35) * (0.85 + rnd() * 0.25);
-      col.setRGB(k, k, k); if (cd.top && rnd() < 0.6) col.multiply(new THREE.Color(1.12, 1.15, 0.85));
-      im.setColorAt(i, col);
-    });
-    im.name = 'hedgeLeaves'; im.computeBoundingSphere(); group.add(im);
+    if (lowQ) grass.count = Math.floor(grass.userData.full * 0.5);
   }
 
-  // --- distant tree crowns (soft, out of focus) + neighbour houses
-  {
-    const crownTex = makeCrownTex(512);
-    const defs = [
-      [10.5, 3.2, -3.6, 5.0, 4.4, 0.95, false], [12.5, 4.2, 5.8, 6.2, 5.6, 0.85, true], [17, 5.0, -8.5, 7, 6.4, 0.8, true],
-      [8.4, 2.3, 4.6, 2.6, 2.4, 1.0, false], [-8, 3.4, 2.5, 5.5, 5, 0.9, false], [2.5, 3.6, 10, 6, 5.2, 0.9, true], [-4, 3, 9.5, 4.5, 4, 0.85, false],
-      [20, 4.6, 9.5, 6, 5.5, 0.8, false],
-    ];
-    const ref = new THREE.Vector3(0, 1, 0.5);
-    defs.sort((a, b) => Math.hypot(b[0] - ref.x, b[2] - ref.z) - Math.hypot(a[0] - ref.x, a[2] - ref.z));
-    const geos = defs.map(([x, y, z, w, h, k, flip]) => {
-      const g = new THREE.PlaneGeometry(w, h);
-      if (flip) { const uv = g.attributes.uv; for (let i = 0; i < uv.count; i++) uv.setX(i, 1 - uv.getX(i)); }
-      const yaw = Math.atan2(ref.x - x, ref.z - z);
-      g.rotateY(yaw).translate(x, y, z);
-      const n = new THREE.Vector3(ref.x - x, 0, ref.z - z).normalize().multiplyScalar(0.75).add(new THREE.Vector3(0, 0.66, 0)).normalize();
-      const na = g.attributes.normal; for (let i = 0; i < na.count; i++) na.setXYZ(i, n.x, n.y, n.z);
-      return vcolor(g, new THREE.Color(k, k, k * 0.95).getHex());
-    });
-    const crowns = new THREE.Mesh(mergeGeometries(geos), new THREE.MeshStandardMaterial({ map: crownTex, vertexColors: true, transparent: true, depthWrite: false, roughness: 1, metalness: 0 }));
-    crowns.renderOrder = -0.5; crowns.name = 'treeCrowns'; group.add(crowns);
+  function buildWall() {
+    // --- house wall
+    {
+      const sid = makeSidingTex(512, 256);
+      const x0 = -7, x1 = 7.2, y0 = 0.3, y1 = 3.2, z = L.WALL_Z;
+      const geo = new THREE.PlaneGeometry(x1 - x0, y1 - y0, 1, 8).translate((x0 + x1) / 2, (y0 + y1) / 2, z);
+      const uv = geo.attributes.uv, p = geo.attributes.position, cols = [];
+      for (let i = 0; i < p.count; i++) {
+        uv.setXY(i, p.getX(i) / 1.2, (p.getY(i) - y0) / 0.912);
+        const k = 0.86 + 0.14 * smooth(y0, 1.3, p.getY(i)); cols.push(k, k * 0.995, k * 0.985);
+      }
+      geo.setAttribute('color', new THREE.Float32BufferAttribute(cols, 3));
+      const mat = new THREE.MeshStandardMaterial({ map: sid.map, normalMap: sid.normalMap, normalScale: new THREE.Vector2(0.8, 0.8), roughness: 0.78, metalness: 0, vertexColors: true });
+      const m = new THREE.Mesh(geo, mat); m.receiveShadow = true; m.name = 'houseWall'; group.add(m);
+      // foundation band (mortar grey)
+      const fgeo = worldUV(new THREE.BoxGeometry(x1 - x0, 0.36, 0.06).translate((x0 + x1) / 2, 0.12, z - 0.005), 1.5, 0.37, 0.21);
+      const fmat = new THREE.MeshStandardMaterial({ map: conc.map, normalMap: conc.normalMap, roughnessMap: conc.roughnessMap, color: 0xcacbcc, roughness: 1, metalness: 0, normalScale: new THREE.Vector2(0.4, 0.4) });
+      const fm = new THREE.Mesh(fgeo, fmat); fm.receiveShadow = true; group.add(fm);
+      // fixtures: flashing, window frame, downspout (one merged mesh, vertex coloured)
+      const keep = ['position', 'normal', 'color'];
+      const parts = [];
+      const box = (w, h, d, x, y, zz, col) => parts.push(stripTo(vcolor(new THREE.BoxGeometry(w, h, d).translate(x, y, zz), col), keep));
+      box(x1 - x0, 0.022, 0.05, (x0 + x1) / 2, 0.3, z + 0.02, 0x8e9092);   // 水切り flashing
+      const wx = -1.45, wy0 = 1.45, wy1 = 2.35, ww = 1.2, fr = 0.045, alu = 0xb9b8b2;
+      box(ww + fr * 2, fr, 0.07, wx, wy0 - fr / 2, z + 0.03, alu); box(ww + fr * 2, fr, 0.07, wx, wy1 + fr / 2, z + 0.03, alu);
+      box(fr, wy1 - wy0, 0.07, wx - ww / 2 - fr / 2, (wy0 + wy1) / 2, z + 0.03, alu); box(fr, wy1 - wy0, 0.07, wx + ww / 2 + fr / 2, (wy0 + wy1) / 2, z + 0.03, alu);
+      box(0.03, wy1 - wy0, 0.05, wx, (wy0 + wy1) / 2, z + 0.035, alu);
+      box(ww + 0.16, 0.025, 0.11, wx, wy0 - fr - 0.012, z + 0.05, 0xa9a8a2);  // sill
+      const dsx = 2.32, dsz = z + 0.075;
+      const curve = new THREE.CatmullRomCurve3([new THREE.Vector3(dsx, 3.25, dsz), new THREE.Vector3(dsx, 0.4, dsz), new THREE.Vector3(dsx, 0.2, dsz + 0.03), new THREE.Vector3(dsx, 0.1, dsz + 0.12), new THREE.Vector3(dsx, 0.075, dsz + 0.2)], false, 'centripetal');
+      parts.push(stripTo(vcolor(new THREE.TubeGeometry(curve, 40, 0.03, 12, false), 0xd2ccbe), keep));
+      for (const y of [0.95, 1.95, 2.95]) box(0.075, 0.03, 0.1, dsx, y, z + 0.05, 0xc9c3b4);
+      const fmesh = new THREE.Mesh(mergeGeometries(parts), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.45, metalness: 0.35 }));
+      fmesh.castShadow = true; fmesh.receiveShadow = true; group.add(fmesh);
+      const glass = new THREE.Mesh(new THREE.PlaneGeometry(ww, wy1 - wy0).translate(wx, (wy0 + wy1) / 2, z + 0.02),
+        new THREE.MeshStandardMaterial({ color: 0xc4cacd, roughness: 0.3, metalness: 0.0 }));
+      group.add(glass);
+    }
+  }
 
-    const keep = ['position', 'normal', 'color'];
-    const walls = [], roofs = [];
-    const house = (px, pz, rot, w, d, h, ridge, wallCol, roofCol) => {
-      const place = (g) => g.rotateY(rot).translate(px, 0, pz);
-      walls.push(place(stripTo(vcolor(new THREE.BoxGeometry(w, h, d).translate(0, h / 2, 0), wallCol), keep)));
-      for (let k = 0; k < 2; k++) walls.push(place(stripTo(vcolor(new THREE.BoxGeometry(0.05, 1.0, 1.5).translate(-w / 2 - 0.02, k ? h * 0.7 : h * 0.28, -d * 0.2 + k * d * 0.3), 0x4a525a), keep)));
-      const ov = 0.5, x0 = -w / 2 - ov, x1 = w / 2 + ov, z0 = -d / 2 - ov, z1 = d / 2 + ov, y0 = h - 0.2, y1 = h + ridge, f = 0.14;
-      const pos = [x0, y0, z0, 0, y1, z0, 0, y1, z1, x0, y0, z0, 0, y1, z1, x0, y0, z1, x1, y0, z0, x1, y0, z1, 0, y1, z1, x1, y0, z0, 0, y1, z1, 0, y1, z0,
-        x0, y0, z0, x0, y0, z1, x0, y0 - f, z1, x0, y0, z0, x0, y0 - f, z1, x0, y0 - f, z0, x1, y0, z0, x1, y0 - f, z1, x1, y0, z1, x1, y0, z0, x1, y0 - f, z0, x1, y0 - f, z1];
-      const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.computeVertexNormals();
-      roofs.push(place(vcolor(g, roofCol)));
-      const gab = new THREE.BufferGeometry(); gab.setAttribute('position', new THREE.Float32BufferAttribute([-w / 2, h, -d / 2, w / 2, h, -d / 2, 0, y1 - 0.1, -d / 2, w / 2, h, d / 2, -w / 2, h, d / 2, 0, y1 - 0.1, d / 2], 3));
-      gab.computeVertexNormals(); walls.push(place(vcolor(gab, wallCol)));
-    };
-    house(30, -11, Math.PI / 2, 8, 7, 5.6, 2.3, 0xd6cfc0, 0x4c535b);
-    house(33, 13, 0, 8, 7, 5.2, 2.2, 0xc9ced0, 0x6a5a50);
-    house(-14, -1, 0, 7, 8, 5.4, 2.2, 0xd3cbbd, 0x4c535b);
-    const hm = new THREE.Mesh(mergeGeometries(walls), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9, metalness: 0 }));
-    const rm = new THREE.Mesh(mergeGeometries(roofs), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85, metalness: 0, side: THREE.DoubleSide }));
-    hm.name = 'neighbourHouses'; rm.name = 'neighbourRoofs'; group.add(hm, rm);
+  function buildHedges() {
+    // --- hedges: dark core boxes + instanced alpha-tested leaf cards
+    {
+      const leaf = makeLeafTex(512);
+      const th = 0.65;
+      const cores = [
+        { x0: HEDGE.px, x1: HEDGE.px + th, z0: T.minZ, z1: HEDGE.pz + th, face: [-1, 0, 0], dens: 60, top: 40, H: HEDGE.hx },
+        { x0: HEDGE.nx - th, x1: HEDGE.px, z0: HEDGE.pz, z1: HEDGE.pz + th, face: [0, 0, -1], dens: 26, top: 18, H: 1.5 },
+        { x0: HEDGE.nx - th, x1: HEDGE.nx, z0: T.minZ, z1: HEDGE.pz, face: [1, 0, 0], dens: 26, top: 18, H: 1.5 },
+      ];
+      const coreGeos = cores.map((c) => new THREE.BoxGeometry(c.x1 - c.x0, c.H - 0.06, c.z1 - c.z0).translate((c.x0 + c.x1) / 2, (c.H - 0.06) / 2, (c.z0 + c.z1) / 2));
+      const coreTex = leaf.map.clone(); coreTex.repeat.set(5, 3); coreTex.needsUpdate = true;
+      const coreMat = new THREE.MeshStandardMaterial({ map: coreTex, color: 0x7a8a68, roughness: 0.9, metalness: 0 });
+      const coreMesh = new THREE.Mesh(mergeGeometries(coreGeos), coreMat); coreMesh.name = 'hedgeCore'; group.add(coreMesh);
+      const rnd = makeRng(57), cards = [];
+      const nrm = new THREE.Vector3(), up = new THREE.Vector3(0, 1, 0);
+      for (const c of cores) {
+        const H = c.H, f = new THREE.Vector3(...c.face), alongX = Math.abs(f.z) > 0.5;
+        const len = alongX ? c.x1 - c.x0 : c.z1 - c.z0;
+        const nFront = Math.round(len * H * c.dens), nTop = Math.round(len * th * c.top);
+        const fx = alongX ? null : (f.x < 0 ? c.x0 : c.x1), fz = alongX ? (f.z < 0 ? c.z0 : c.z1) : null;
+        for (let i = 0; i < nFront + nTop; i++) {
+          const u = rnd(), isTop = i >= nFront, off = -0.03 + rnd() * 0.1;
+          let x, y, z;
+          nrm.copy(isTop ? up : f);
+          if (isTop) {
+            const v = rnd();
+            x = alongX ? c.x0 + u * len : c.x0 + v * th; z = alongX ? c.z0 + v * th : c.z0 + u * len; y = H - 0.06 + off;
+            const edge = Math.min(v, 1 - v); if (edge < 0.18) { const sideN = alongX ? new THREE.Vector3(0, 0, v < 0.5 ? -1 : 1) : new THREE.Vector3(v < 0.5 ? -1 : 1, 0, 0); nrm.lerp(sideN, (0.18 - edge) / 0.18 * 0.7).normalize(); y -= (0.18 - edge) * 0.4; }
+          } else {
+            y = 0.08 + rnd() * (H - 0.14);
+            if (alongX) { x = c.x0 + u * len; z = fz + f.z * off; } else { z = c.z0 + u * len; x = fx + f.x * off; }
+            if (y > H - 0.25) nrm.lerp(up, (y - (H - 0.25)) / 0.25 * 0.6).normalize();
+          }
+          nrm.x += (rnd() - 0.5) * 0.9; nrm.y += (rnd() - 0.5) * 0.9; nrm.z += (rnd() - 0.5) * 0.9; nrm.normalize();
+          cards.push({ p: new THREE.Vector3(x, y, z), n: nrm.clone(), s: 0.26 + rnd() * 0.18, roll: rnd() * Math.PI * 2, depth: off, top: isTop || y > H - 0.3 });
+        }
+      }
+      const cardMat = new THREE.MeshStandardMaterial({ map: leaf.map, normalMap: leaf.normalMap, normalScale: new THREE.Vector2(0.9, 0.9), alphaTest: 0.5, side: THREE.DoubleSide, roughness: 0.62, metalness: 0 });
+      const im = new THREE.InstancedMesh(new THREE.PlaneGeometry(1, 1), cardMat, cards.length);
+      const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), q2 = new THREE.Quaternion(), zf = new THREE.Vector3(0, 0, 1), sc = new THREE.Vector3(), col = new THREE.Color();
+      cards.forEach((cd, i) => {
+        q.setFromUnitVectors(zf, cd.n); q2.setFromAxisAngle(zf, cd.roll); q.multiply(q2);
+        im.setMatrixAt(i, m4.compose(cd.p, q, sc.set(cd.s, cd.s, cd.s)));
+        const k = (0.7 + (cd.depth + 0.03) / 0.1 * 0.35) * (0.85 + rnd() * 0.25);
+        col.setRGB(k, k, k); if (cd.top && rnd() < 0.6) col.multiply(new THREE.Color(1.12, 1.15, 0.85));
+        im.setColorAt(i, col);
+      });
+      im.name = 'hedgeLeaves'; im.computeBoundingSphere(); group.add(im);
+    }
+  }
+
+  function buildBackdrop() {
+    // --- distant tree crowns (soft, out of focus) + neighbour houses
+    {
+      const crownTex = makeCrownTex(512);
+      const defs = [
+        [10.5, 3.2, -3.6, 5.0, 4.4, 0.95, false], [12.5, 4.2, 5.8, 6.2, 5.6, 0.85, true], [17, 5.0, -8.5, 7, 6.4, 0.8, true],
+        [8.4, 2.3, 4.6, 2.6, 2.4, 1.0, false], [-8, 3.4, 2.5, 5.5, 5, 0.9, false], [2.5, 3.6, 10, 6, 5.2, 0.9, true], [-4, 3, 9.5, 4.5, 4, 0.85, false],
+        [20, 4.6, 9.5, 6, 5.5, 0.8, false],
+      ];
+      const ref = new THREE.Vector3(0, 1, 0.5);
+      defs.sort((a, b) => Math.hypot(b[0] - ref.x, b[2] - ref.z) - Math.hypot(a[0] - ref.x, a[2] - ref.z));
+      const geos = defs.map(([x, y, z, w, h, k, flip]) => {
+        const g = new THREE.PlaneGeometry(w, h);
+        if (flip) { const uv = g.attributes.uv; for (let i = 0; i < uv.count; i++) uv.setX(i, 1 - uv.getX(i)); }
+        const yaw = Math.atan2(ref.x - x, ref.z - z);
+        g.rotateY(yaw).translate(x, y, z);
+        const n = new THREE.Vector3(ref.x - x, 0, ref.z - z).normalize().multiplyScalar(0.75).add(new THREE.Vector3(0, 0.66, 0)).normalize();
+        const na = g.attributes.normal; for (let i = 0; i < na.count; i++) na.setXYZ(i, n.x, n.y, n.z);
+        return vcolor(g, new THREE.Color(k, k, k * 0.95).getHex());
+      });
+      const crowns = new THREE.Mesh(mergeGeometries(geos), new THREE.MeshStandardMaterial({ map: crownTex, vertexColors: true, transparent: true, depthWrite: false, roughness: 1, metalness: 0 }));
+      crowns.renderOrder = -0.5; crowns.name = 'treeCrowns'; group.add(crowns);
+
+      const keep = ['position', 'normal', 'color'];
+      const walls = [], roofs = [];
+      const house = (px, pz, rot, w, d, h, ridge, wallCol, roofCol) => {
+        const place = (g) => g.rotateY(rot).translate(px, 0, pz);
+        walls.push(place(stripTo(vcolor(new THREE.BoxGeometry(w, h, d).translate(0, h / 2, 0), wallCol), keep)));
+        for (let k = 0; k < 2; k++) walls.push(place(stripTo(vcolor(new THREE.BoxGeometry(0.05, 1.0, 1.5).translate(-w / 2 - 0.02, k ? h * 0.7 : h * 0.28, -d * 0.2 + k * d * 0.3), 0x4a525a), keep)));
+        const ov = 0.5, x0 = -w / 2 - ov, x1 = w / 2 + ov, z0 = -d / 2 - ov, z1 = d / 2 + ov, y0 = h - 0.2, y1 = h + ridge, f = 0.14;
+        const pos = [x0, y0, z0, 0, y1, z0, 0, y1, z1, x0, y0, z0, 0, y1, z1, x0, y0, z1, x1, y0, z0, x1, y0, z1, 0, y1, z1, x1, y0, z0, 0, y1, z1, 0, y1, z0,
+          x0, y0, z0, x0, y0, z1, x0, y0 - f, z1, x0, y0, z0, x0, y0 - f, z1, x0, y0 - f, z0, x1, y0, z0, x1, y0 - f, z1, x1, y0, z1, x1, y0, z0, x1, y0 - f, z0, x1, y0 - f, z1];
+        const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.computeVertexNormals();
+        roofs.push(place(vcolor(g, roofCol)));
+        const gab = new THREE.BufferGeometry(); gab.setAttribute('position', new THREE.Float32BufferAttribute([-w / 2, h, -d / 2, w / 2, h, -d / 2, 0, y1 - 0.1, -d / 2, w / 2, h, d / 2, -w / 2, h, d / 2, 0, y1 - 0.1, d / 2], 3));
+        gab.computeVertexNormals(); walls.push(place(vcolor(gab, wallCol)));
+      };
+      house(30, -11, Math.PI / 2, 8, 7, 5.6, 2.3, 0xd6cfc0, 0x4c535b);
+      house(33, 13, 0, 8, 7, 5.2, 2.2, 0xc9ced0, 0x6a5a50);
+      house(-14, -1, 0, 7, 8, 5.4, 2.2, 0xd3cbbd, 0x4c535b);
+      const hm = new THREE.Mesh(mergeGeometries(walls), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9, metalness: 0 }));
+      const rm = new THREE.Mesh(mergeGeometries(roofs), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85, metalness: 0, side: THREE.DoubleSide }));
+      hm.name = 'neighbourHouses'; rm.name = 'neighbourRoofs'; group.add(hm, rm);
+    }
   }
 
   // --- sky dome
@@ -634,10 +646,13 @@ export function createWorld(ctx) {
     uGain: { value: 1 }, uDisc: { value: 1 }, uStars: { value: 0 }, uMoon: { value: 0 }, uCover: { value: 0.6 },
     uDrift: { value: new THREE.Vector2(0.13, 0.41) }, uNoise: { value: noiseTex },
   };
-  const sky = new THREE.Mesh(new THREE.SphereGeometry(100, 32, 20), new THREE.ShaderMaterial({ uniforms: skyU, vertexShader: SKY_VERT, fragmentShader: SKY_FRAG, side: THREE.BackSide, depthWrite: false, fog: false }));
-  sky.frustumCulled = false; sky.renderOrder = -10; sky.name = 'sky';
-  sky.onBeforeRender = (r, s, cam) => { sky.position.copy(cam.position); sky.updateMatrixWorld(); };
-  group.add(sky);
+  function buildSky() {
+    const sky = new THREE.Mesh(new THREE.SphereGeometry(100, 32, 20), new THREE.ShaderMaterial({ uniforms: skyU, vertexShader: SKY_VERT, fragmentShader: SKY_FRAG, side: THREE.BackSide, depthWrite: false, fog: false }));
+    sky.frustumCulled = false; sky.renderOrder = -10; sky.name = 'sky';
+    sky.onBeforeRender = (r, s, cam) => { sky.position.copy(cam.position); sky.updateMatrixWorld(); };
+    group.add(sky);
+  }
+
   scene.fog = new THREE.Fog(0xbcd0e2, 10, 110);
 
   // --- lights
@@ -693,10 +708,11 @@ export function createWorld(ctx) {
     updateShadowCam();
   }
 
-  function setQuality(lowQ) {
+  function setQuality(q) {
+    lowQ = !!q;
     const s = lowQ ? 1024 : 2048;
     if (sun.shadow.mapSize.x !== s) { sun.shadow.mapSize.set(s, s); if (sun.shadow.map) { sun.shadow.map.dispose(); sun.shadow.map = null; } updateShadowCam(); }
-    grass.count = lowQ ? Math.floor(grass.userData.full * 0.5) : grass.userData.full;
+    if (grass) grass.count = lowQ ? Math.floor(grass.userData.full * 0.5) : grass.userData.full;
   }
 
   function update(dt) {
@@ -710,6 +726,7 @@ export function createWorld(ctx) {
 
   return {
     group,
+    later: [buildSky, buildWall, buildLawn, buildHedges, buildBackdrop],   // background build steps, in this order
     setTimeOfDay,
     get timeOfDay() { return tod; },
     set timeOfDay(v) { setTimeOfDay(v); },

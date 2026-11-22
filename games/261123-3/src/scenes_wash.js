@@ -108,10 +108,18 @@ function seedFoam(ctx, i, n) {
 // ---------------------------------------------------------------------------------------------
 // canonical pictures (SCENES.md table)
 // ---------------------------------------------------------------------------------------------
+// brush (built in the background on a fresh start: the opening stage places it once it exists, see bag.loaded)
+function placeBrush(ctx, id) {
+  if (!ctx.brush) return;
+  if (id === 'scrub') { brushInBasin = true; }
+  else if (!(id === 'rinse' && brushInBasin)) parkBrush(ctx);
+  if (id !== 'scrub' && id !== 'rinse') ctx.brush.setFoam(0);
+  ctx.brush.setPress(0);
+}
 function placeCommon(ctx, id) {
   const st = ctx.state, b = ctx.basin;
   ctx.world.setTimeOfDay(0);
-  ctx.spinner.setLidOpen(0);
+  if (ctx.spinner) ctx.spinner.setLidOpen(0);
   b.setTilt(0); b.setPour(0);
   ctx.sim.tilt = 0; ctx.sim.handleWobble = 0;
   for (const n of ['scrub', 'fizz', 'pour']) ctx.audio.setLoop(n, 0);
@@ -133,11 +141,8 @@ function placeCommon(ctx, id) {
     else if (id === 'dunk') putShoe(ctx, i, st.dunked[i] ? 'basin' : 'ground');
     else putShoe(ctx, i, 'basin');
   }
-  // brush
-  if (id === 'scrub') { brushInBasin = true; }
-  else if (!(id === 'rinse' && brushInBasin)) parkBrush(ctx);
-  if (id !== 'scrub' && id !== 'rinse') { ctx.brush.setFoam(0); ctx.fx.foam.clear(); }
-  ctx.brush.setPress(0);
+  if (id !== 'scrub' && id !== 'rinse') ctx.fx.foam.clear();
+  placeBrush(ctx, id);
 }
 
 // =============================================================================================
@@ -231,6 +236,12 @@ function popShoe(ctx) {
 
 const bag = {
   id: 'bag', shot: (ctx) => (ctx.state.pulled > 0 ? SHOTS.bagWide : SHOTS.bag),
+  lite: true,   // can start before the background props exist (only the bag, shoes, basin and terrace are on screen)
+  loaded(ctx) { // the background props arrived: put them where placeCommon would have
+    ctx.spinner.setLidOpen(0);
+    ctx.hanger.clips[2].setLoad(0);
+    placeBrush(ctx, 'bag');
+  },
   place(ctx) {
     placeCommon(ctx, 'bag');
     const st = ctx.state;

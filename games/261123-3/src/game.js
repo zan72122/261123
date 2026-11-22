@@ -24,31 +24,39 @@ export function start(stages) {
   saveKey: SAVE_KEY,
   defaultState,
   stages,
+  // Only what the opening shot (the bag on the terrace) needs is built before the first frame; the rest is
+  // built one piece per frame in the background while the child plays (see `later`), and is always
+  // complete before the first stage change (boot flushes anything left).
   createModules(ctx) {
     const { scene } = ctx;
+    const add = (m) => { if (m.group && !m.group.parent) scene.add(m.group); return m; };
     ctx.audio = createAudio();
-    ctx.world = createWorld(ctx);
-    ctx.fx = createFx(ctx);
-    ctx.shoes = [createShoe(ctx, { side: 'L' }), createShoe(ctx, { side: 'R' })];
-    ctx.bag = createBag(ctx);
-    ctx.faucet = createFaucet(ctx);
-    ctx.basin = createBasin(ctx);
-    ctx.brush = createBrush(ctx);
-    ctx.soap = createSoap(ctx);
-    ctx.spinner = createSpinner(ctx);
-    ctx.pole = createPole(ctx);
-    ctx.hanger = createHanger(ctx);
+    ctx.world = add(createWorld(ctx));
+    ctx.fx = add(createFx(ctx));
+    ctx.shoes = [add(createShoe(ctx, { side: 'L' })), add(createShoe(ctx, { side: 'R' }))];
+    ctx.bag = add(createBag(ctx));
+    ctx.basin = add(createBasin(ctx));
+    ctx.faucet = ctx.brush = ctx.soap = ctx.spinner = ctx.pole = ctx.hanger = null;
     ctx.rigs = [0, 1].map(() => ({ where: 'hidden', press: 0, kx: 0, kz: 0, slide: 0 }));
     ctx.sim = createSim(ctx);
-    for (const m of [ctx.world, ctx.fx, ctx.bag, ctx.faucet, ctx.basin, ctx.brush, ctx.soap, ctx.spinner, ctx.pole, ctx.hanger, ...ctx.shoes]) {
-      if (m.group && !m.group.parent) scene.add(m.group);
-    }
-    ctx.faucet.group.position.fromArray(L.FAUCET);
     ctx.basin.group.position.fromArray(L.BASIN);
-    ctx.soap.group.position.fromArray(L.SOAP);
-    ctx.spinner.group.position.fromArray(L.SPINNER);
+    // modules built later are updated through a slot, so the update order stays the same as before
+    const slot = (k) => ({ update(dt) { const m = ctx[k]; if (m && m.update) m.update(dt); } });
     // update order: sim first (positions floating shoes, drives water), then props, fx, audio
-    return [ctx.sim, ctx.world, ctx.bag, ctx.faucet, ctx.basin, ctx.brush, ctx.soap, ctx.spinner, ctx.hanger, ctx.shoes[0], ctx.shoes[1], ctx.fx, ctx.audio];
+    return [ctx.sim, ctx.world, ctx.bag, slot('faucet'), ctx.basin, slot('brush'), slot('soap'), slot('spinner'), slot('hanger'), ctx.shoes[0], ctx.shoes[1], ctx.fx, ctx.audio];
+  },
+  later(ctx) {
+    const { scene } = ctx;
+    const add = (m) => { if (m.group && !m.group.parent) scene.add(m.group); return m; };
+    return [
+      () => { ctx.faucet = add(createFaucet(ctx)); ctx.faucet.group.position.fromArray(L.FAUCET); },
+      ...ctx.world.later,
+      () => { ctx.brush = add(createBrush(ctx)); },
+      () => { ctx.soap = add(createSoap(ctx)); ctx.soap.group.position.fromArray(L.SOAP); },
+      () => { ctx.spinner = add(createSpinner(ctx)); ctx.spinner.group.position.fromArray(L.SPINNER); },
+      () => { ctx.pole = add(createPole(ctx)); },
+      () => { ctx.hanger = add(createHanger(ctx)); },
+    ];
   },
 });
 }
