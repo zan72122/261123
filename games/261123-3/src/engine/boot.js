@@ -328,9 +328,10 @@ function bootInner(opts) {
     for (let i = 0; i < ch.length; i++) if (ch[i].visible) sigVisit(ch[i]);
   }
   let shadowPending = false;
+  scene.matrixWorldAutoUpdate = false; // updated once per frame in shadowCheck (render would do it a second time)
   function shadowCheck() {
-    if (!renderer.shadowMap.enabled) return;
     scene.updateMatrixWorld();
+    if (!renderer.shadowMap.enabled) return;
     sigN = 0; sigMove = 0;
     sigVisit(scene);
     sigPush(-2); sigPush(sigN); // length marker
@@ -346,9 +347,19 @@ function bootInner(opts) {
   // --- warm-up: compile every material and upload every texture once, right after the first frame,
   // so later stages (props that are hidden until then, new fx) don't stall on a shader compile or a
   // texture upload mid-animation — the main source of hitches on iOS.
+  // three's shadow pass shares one depth material between plain and instanced casters, which forces a
+  // program re-derivation on every switch; instanced casters get their own (identical) depth material.
+  const instDepth = {};
+  function instancedDepth(o) {
+    if (!o.isInstancedMesh || !o.castShadow || o.customDepthMaterial) return;
+    const m = o.material; if (!m || Array.isArray(m) || m.alphaTest > 0 || m.displacementMap) return; // those need three's own per-material variant
+    const k = o.instanceColor ? 'c' : 'n';
+    o.customDepthMaterial = instDepth[k] || (instDepth[k] = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking }));
+  }
   function warmUp() {
     const hiddenObjs = [], texs = new Set();
     scene.traverse((o) => {
+      instancedDepth(o);
       if (!o.visible) { hiddenObjs.push(o); o.visible = true; }
       const mats = o.material ? (Array.isArray(o.material) ? o.material : [o.material]) : null;
       if (!mats) return;

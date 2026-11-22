@@ -372,7 +372,9 @@ export function createFaucet(ctx) {
   // drops
   const dropMat = waterMaterial({ color: 0xa0b0b8, opacity: 0.28, roughness: 0.03, env: 2.4, key: 'drop' }); mats.push(dropMat);
   const drops = new Drops(group, Math.round(160 * ((ctx.quality && ctx.quality.particleScale) || 1)), dropMat);
-  const hang = new THREE.Mesh(new THREE.SphereGeometry(1, 20, 14), dropMat); hang.visible = false; hang.renderOrder = 4; group.add(hang);
+  // own material instance: sharing one between an InstancedMesh and a plain Mesh makes three re-derive the program on every draw
+  const hangMat = waterMaterial({ color: 0xa0b0b8, opacity: 0.28, roughness: 0.03, env: 2.4, key: 'drop' }); mats.push(hangMat);
+  const hang = new THREE.Mesh(new THREE.SphereGeometry(1, 20, 14), hangMat); hang.visible = false; hang.renderOrder = 4; group.add(hang);
 
   let flow = 0, landLocal = 0, time = 0, hangR = 0, dripAcc = 0, splashAcc = 0, handleAngle = 0;
   const api = { group, handle, spoutTip, onDrop: null };
@@ -886,6 +888,7 @@ export function createBrush(ctx) {
   { const col = new THREE.Color(); for (let i = 0; i < fibres.length; i++) { const v = 0.93 + rnd() * 0.07; fib.setColorAt(i, col.setRGB(v, v, v * 0.985)); } }
   const coreGeo = new THREE.CylinderGeometry(0.0013, 0.0016, 1, 10, 1, false); coreGeo.translate(0, -0.5, 0);
   const cores = new THREE.InstancedMesh(coreGeo, nylon, tufts.length); cores.receiveShadow = true; group.add(cores);
+  { const white = new THREE.Color(1, 1, 1); for (let i = 0; i < tufts.length; i++) cores.setColorAt(i, white); } // same program variant as the fibres
   const _m = new THREE.Matrix4(), _q = new THREE.Quaternion(), _s = new THREE.Vector3(), _p = new THREE.Vector3(), _d = new THREE.Vector3(), DOWN = new THREE.Vector3(0, -1, 0);
   let press = -1, foamF = -1;
   function layBristles(p) {
@@ -997,7 +1000,8 @@ export function createSoap(ctx) {
   const bottom = new THREE.Mesh(floorGeo.clone().translate(0, -0.0032, 0), dishMat); group.add(bottom);
   // ribs
   const ribGeo = new THREE.CapsuleGeometry(0.0021, 0.06, 4, 10); ribGeo.rotateX(Math.PI / 2);
-  const NRIB = 9, ribs = new THREE.InstancedMesh(ribGeo, dishMat, NRIB); ribs.castShadow = true; ribs.receiveShadow = true;
+  const ribMat = dishMat.clone(); mats.push(ribMat); // instanced: separate material so the dish's program isn't re-derived per draw
+  const NRIB = 9, ribs = new THREE.InstancedMesh(ribGeo, ribMat, NRIB); ribs.castShadow = true; ribs.receiveShadow = true;
   { const m = new THREE.Matrix4(); for (let i = 0; i < NRIB; i++) { m.makeTranslation((i - (NRIB - 1) / 2) * 0.0118, 0.0047, 0); ribs.setMatrixAt(i, m); } }
   group.add(ribs);
   // a little soapy water in the dish

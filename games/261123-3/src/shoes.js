@@ -750,6 +750,7 @@ export function createShoe(ctx, { side = 'R' } = {}) {
   const W = getWeights()[side], WSUM = getWeights().sum;
 
   const dirt = new Float32Array(GX * GZ).fill(1);
+  const SAT = new Float64Array((GX + 1) * (GZ + 1)); // scratch for dirtiestPoint
   const dData = new Uint8Array(GX * GZ).fill(255);
   const dTex = new THREE.DataTexture(dData, GX, GZ, THREE.RedFormat, THREE.UnsignedByteType);
   dTex.magFilter = dTex.minFilter = THREE.LinearFilter; dTex.wrapS = dTex.wrapT = THREE.ClampToEdgeWrapping; dTex.needsUpdate = true;
@@ -818,12 +819,20 @@ export function createShoe(ctx, { side = 'R' } = {}) {
     },
     dirtLeft() { return left; },
     dirtiestPoint(out) {
+      // 7x7 box sums of dirt*W via a summed-area table (O(cells) instead of 49 reads per cell)
+      const SW = GX + 1;
+      for (let ix = 0; ix <= GX; ix++) SAT[ix] = 0;
+      for (let iz = 0; iz < GZ; iz++) {
+        let row = 0; const r0 = iz * SW, r1 = r0 + SW, o = iz * GX;
+        SAT[r1] = 0;
+        for (let ix = 0; ix < GX; ix++) { row += dirt[o + ix] * W[o + ix]; SAT[r1 + ix + 1] = SAT[r0 + ix + 1] + row; }
+      }
       let best = -1, bi = -1, mx = 0;
       for (let iz = 0; iz < GZ; iz++) for (let ix = 0; ix < GX; ix++) {
         const o = iz * GX + ix; if (W[o] < 0.5) continue;
         if (dirt[o] > mx) mx = dirt[o];
-        let s = 0;
-        for (let dz = -3; dz <= 3; dz++) { const jz = iz + dz; if (jz < 0 || jz >= GZ) continue; for (let dx = -3; dx <= 3; dx++) { const jx = ix + dx; if (jx < 0 || jx >= GX) continue; s += dirt[jz * GX + jx] * W[jz * GX + jx]; } }
+        const xa = ix < 3 ? 0 : ix - 3, xb = ix + 4 > GX ? GX : ix + 4, za = iz < 3 ? 0 : iz - 3, zb = iz + 4 > GZ ? GZ : iz + 4;
+        let s = SAT[zb * SW + xb] - SAT[za * SW + xb] - SAT[zb * SW + xa] + SAT[za * SW + xa];
         s -= ((ix - GX / 2) ** 2 + (iz - GZ / 2) ** 2) * 1e-4;
         if (s > best) { best = s; bi = o; }
       }
