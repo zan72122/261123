@@ -161,7 +161,7 @@ function makeFoamClumpGeo() {
         occ += clamp01(1 - dd / 0.12) * 0.35;
       }
       const ny = p.getY(i) / r;
-      const ao = Math.max(0.42, 1 - occ) * (0.84 + 0.16 * (ny * 0.5 + 0.5));
+      const ao = Math.max(0.5, 1 - occ) * (0.84 + 0.16 * (ny * 0.5 + 0.5));
       c[i * 3] = c[i * 3 + 1] = c[i * 3 + 2] = ao;
       p.setXYZ(i, vx, vy, vz);
     }
@@ -403,7 +403,7 @@ export function createFx(ctx) {
   const foamGeo = makeFoamClumpGeo();
   const foamMat = new THREE.MeshStandardMaterial({
     color: 0xf2f0ea, roughness: 0.16, metalness: 0, vertexColors: true,
-    emissive: 0x5a5955, envMapIntensity: 1.25,
+    emissive: 0x6a6965, envMapIntensity: 1.25,
   });
   const foamMesh = new THREE.InstancedMesh(foamGeo, foamMat, FOAM_STORE);
   foamMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
@@ -544,12 +544,12 @@ export function createFx(ctx) {
   const uSpin = new Float32Array(DUST_CAP), uVar = new Float32Array(DUST_CAP), uCol = new Float32Array(DUST_CAP * 3), uA = new Float32Array(DUST_CAP);
   const dustMat = new THREE.ShaderMaterial({
     transparent: true, depthWrite: false, toneMapped: true,
-    uniforms: { uSun: sunU, map: { value: makeDustTex() }, uLight: { value: new THREE.Vector3(1.32, 1.29, 1.24) } },
+    uniforms: { uSun: sunU, map: { value: makeDustTex() }, uLight: { value: new THREE.Vector3(1.75, 1.7, 1.62) } },
     vertexShader: BB_VERT,
     fragmentShader: `uniform sampler2D map; uniform vec3 uLight; varying vec4 vP; varying vec3 vC; varying vec2 vUv; varying vec2 vQ; varying vec2 vSun;
       void main(){ float vz = floor(vP.z + 0.5); vec2 cell = vec2(mod(vz, 2.0), floor(vz * 0.5 + 0.25));
         vec4 tx = texture2D(map, (vUv + cell) * 0.5);
-        float lit = 0.68 + 0.42 * clamp(dot(vQ, vSun) * 0.7 + 0.45, 0.0, 1.0);
+        float lit = 0.72 + 0.4 * clamp(dot(vQ, vSun) * 0.7 + 0.45, 0.0, 1.0);
         vec3 col = vC * uLight * lit * (0.92 + 0.4 * (tx.r - 0.9));
         gl_FragColor = vec4(col, tx.a * vP.x);
         #include <tonemapping_fragment>
