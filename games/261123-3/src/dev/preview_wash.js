@@ -9,15 +9,22 @@ const CAMS = {
   clear: { cam: [0.02, 0.62, 0.33], look: [0.02, 0.05, 0.0] },
   murk: { cam: [0.02, 0.62, 0.33], look: [0.02, 0.05, 0.0] },
   tilt: { cam: [0.1, 0.9, 1.3], look: [0, 0.05, 0.2] },
-  tools: { cam: [0.4, 0.36, 0.42], look: [0.37, 0.03, 0.05], fov: 40 },
+  tools: { cam: [0.44, 0.4, 0.6], look: [0.38, 0.03, 0.1], fov: 40 },
   drip: { cam: [0.1, 0.62, 0.35], look: [0, 0.4, -0.16] },
   overflow: { cam: [0.2, 0.55, 0.75], look: [0, 0.06, 0] },
 };
 
 startPreview(({ THREE, scene, ctx }) => {
+  const t0 = performance.now();
   const faucet = createFaucet(ctx); faucet.group.position.set(0, 0, -0.40); scene.add(faucet.group);
+  const t1 = performance.now();
   const basin = createBasin(ctx); scene.add(basin.group);
-  const brush = createBrush(ctx), soap = createSoap(ctx);
+  const t2 = performance.now();
+  const brush = createBrush(ctx);
+  const t3 = performance.now();
+  const soap = createSoap(ctx);
+  const t4 = performance.now();
+  if (new URLSearchParams(location.search).has('timing')) console.warn('washprops build ms', (performance.now() - t0).toFixed(1), 'faucet', (t1 - t0).toFixed(1), 'basin', (t2 - t1).toFixed(1), 'brush', (t3 - t2).toFixed(1), 'soap', (t4 - t3).toFixed(1));
   soap.group.position.set(0.39, 0, -0.06); scene.add(soap.group);
   const shoeMat = new THREE.MeshStandardMaterial({ color: 0xefede6, roughness: 0.7 });
   const shoes = [];
@@ -35,7 +42,7 @@ startPreview(({ THREE, scene, ctx }) => {
   }
   if (view === 'tools') {
     const s = mkShoe(); s.position.set(0.36, 0.025, 0.14); s.rotation.y = 1.35; scene.add(s);
-    brush.group.position.set(0.36, 0.05, 0.14); brush.group.rotation.set(0, 0.5, 0); scene.add(brush.group);
+    brush.group.position.set(0.37, 0.012, 0.268); brush.group.rotation.set(0.45, Math.PI - 0.15, 0); scene.add(brush.group);
     brush.setFoam(0.6);
   }
   basin.setWater(level, murk, foam); basin.setTilt(tilt); basin.setPour(pour); basin.setOverflow(over);

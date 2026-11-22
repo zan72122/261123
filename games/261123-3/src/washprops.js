@@ -54,6 +54,7 @@ function heightToNormal(hf, w, h, strength) {
   }
   g.putImageData(img, 0, 0); return c;
 }
+function upscale(c, w, h) { const o = mkCanvas(w, h), g = o.getContext('2d'); g.imageSmoothingEnabled = true; g.drawImage(c, 0, 0, w, h); return o; }
 function fieldToCanvas(f, w, h, fn) {
   const c = mkCanvas(w, h), g = c.getContext('2d'), img = g.createImageData(w, h), d = img.data;
   for (let i = 0; i < w * h; i++) { const v = fn(f[i], i); d[i * 4] = v[0]; d[i * 4 + 1] = v[1]; d[i * 4 + 2] = v[2]; d[i * 4 + 3] = 255; }
@@ -69,11 +70,18 @@ function waveNormalCanvas(w, h, seed, n, kx0, kx1, ky0, ky1, strength, pow = 1.3
     W.push([kx, ky, r() * TAU, 1 / Math.pow(k, pow)]);
   }
   const gx = new Float32Array(w * h), gy = new Float32Array(w * h); let mx = 0;
-  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
-    let a = 0, b = 0; const u = x / w, v = y / h;
-    for (let i = 0; i < n; i++) { const q = W[i], cs = Math.cos(TAU * (q[0] * u + q[1] * v) + q[2]) * q[3]; a += cs * q[0]; b += cs * q[1]; }
-    gx[y * w + x] = a; gy[y * w + x] = b; mx = Math.max(mx, Math.hypot(a, b));
+  // cos(A+B) = cosA cosB - sinA sinB with per-row / per-column tables
+  const cx = new Float32Array(n * w), sx = new Float32Array(n * w), cy = new Float32Array(n * h), sy = new Float32Array(n * h);
+  for (let i = 0; i < n; i++) {
+    for (let x = 0; x < w; x++) { const a = TAU * W[i][0] * x / w + W[i][2]; cx[i * w + x] = Math.cos(a); sx[i * w + x] = Math.sin(a); }
+    for (let y = 0; y < h; y++) { const a = TAU * W[i][1] * y / h; cy[i * h + y] = Math.cos(a); sy[i * h + y] = Math.sin(a); }
   }
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    let a = 0, b = 0;
+    for (let i = 0; i < n; i++) { const q = W[i], cs = (cx[i * w + x] * cy[i * h + y] - sx[i * w + x] * sy[i * h + y]) * q[3]; a += cs * q[0]; b += cs * q[1]; }
+    gx[y * w + x] = a; gy[y * w + x] = b; const m = a * a + b * b; if (m > mx) mx = m;
+  }
+  mx = Math.sqrt(mx);
   const c = mkCanvas(w, h), g = c.getContext('2d'), img = g.createImageData(w, h), d = img.data;
   for (let i = 0; i < w * h; i++) {
     const nx = -gx[i] / mx * strength, ny = gy[i] / mx * strength, l = Math.hypot(nx, ny, 1);
@@ -83,16 +91,16 @@ function waveNormalCanvas(w, h, seed, n, kx0, kx1, ky0, ky1, strength, pow = 1.3
 }
 
 const TEX = {}; // module-level cache (shared by all instances)
-function texWaterN() { return TEX.wn || (TEX.wn = mkTex(waveNormalCanvas(256, 256, 11, 26, 1, 9, 1, 9, 1.0), false, true)); }
-function texStreamN() { return TEX.sn || (TEX.sn = mkTex(waveNormalCanvas(64, 256, 23, 18, 1, 4, 0, 10, 1.4, 1.0), false, true)); }
+function texWaterN() { return TEX.wn || (TEX.wn = mkTex(waveNormalCanvas(192, 192, 11, 20, 1, 9, 1, 9, 1.0), false, true)); }
+function texStreamN() { return TEX.sn || (TEX.sn = mkTex(waveNormalCanvas(64, 192, 23, 14, 1, 4, 0, 10, 1.4, 1.0), false, true)); }
 function texStreak() { // vertical rivulet streaks (alpha), u periodic
   if (TEX.st) return TEX.st;
-  const f = fbmField(128, 128, 77, 8, 1, 4, 0.55);
-  return (TEX.st = mkTex(fieldToCanvas(f, 128, 128, v => { const a = 255 * smooth(0.25, 0.75, v); return [a, a, a]; }), false, true));
+  const f = fbmField(128, 128, 77, 8, 2, 4, 0.6);
+  return (TEX.st = mkTex(fieldToCanvas(f, 128, 128, v => { const a = 255 * (0.35 + 0.65 * smooth(0.3, 0.8, v)); return [a, a, a]; }), false, true));
 }
 function texCaustic() { // domain-warped cellular network: curvy bright caustic lines
   if (TEX.ca) return TEX.ca;
-  const S = 256, C = 5, r = mulberry(5), pts = [];
+  const S = 192, C = 5, r = mulberry(5), pts = [];
   for (let j = 0; j < C; j++) for (let i = 0; i < C; i++) pts.push([(i + 0.2 + r() * 0.6) / C, (j + 0.2 + r() * 0.6) / C]);
   const wx = periodicNoise(71, 4, 4), wy = periodicNoise(72, 4, 4);
   const f = new Float32Array(S * S);
@@ -102,9 +110,10 @@ function texCaustic() { // domain-warped cellular network: curvy bright caustic 
     const ci = Math.floor(u * C), cj = Math.floor(v * C); let f1 = 9, f2 = 9;
     for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) {
       const ii = (ci + di + C) % C, jj = (cj + dj + C) % C, p = pts[jj * C + ii];
-      const d = Math.hypot(u - (p[0] + (ci + di - ii) / C), v - (p[1] + (cj + dj - jj) / C)) * C;
+      const ex = u - (p[0] + (ci + di - ii) / C), ey = v - (p[1] + (cj + dj - jj) / C), d = ex * ex + ey * ey;
       if (d < f1) { f2 = f1; f1 = d; } else if (d < f2) f2 = d;
     }
+    f1 = Math.sqrt(f1) * C; f2 = Math.sqrt(f2) * C;
     f[y * S + x] = (f2 - f1) + f1 * 0.12;
   }
   return (TEX.ca = mkTex(fieldToCanvas(f, S, S, v => { const a = 255 * Math.pow(Math.max(0, 1 - v / 0.3), 2.4); return [a, a, a]; }), false, true));
@@ -112,37 +121,31 @@ function texCaustic() { // domain-warped cellular network: curvy bright caustic 
 // soap foam: color (sRGB), alpha (density field; shader thresholds it), normal (fine bubbles)
 function texFoam() {
   if (TEX.fo) return TEX.fo;
-  const S = 512, r = mulberry(91);
-  const isl = fbmField(S, S, 41, 3, 3, 6, 0.62);
-  const cc = mkCanvas(S, S), cg = cc.getContext('2d');
-  const hc = mkCanvas(S, S), hg = hc.getContext('2d');
-  cg.fillStyle = 'rgb(236,235,231)'; cg.fillRect(0, 0, S, S);
-  hg.fillStyle = 'rgb(128,128,128)'; hg.fillRect(0, 0, S, S);
-  const N = 16000;
-  for (let n = 0; n < N; n++) {
-    const x = r() * S, y = r() * S;
-    const rad = 0.5 + Math.pow(r(), 4) * 4.5;
-    for (const ox of [-S, 0, S]) for (const oy of [-S, 0, S]) {
-      const X = x + ox, Y = y + oy; if (X < -8 || X > S + 8 || Y < -8 || Y > S + 8) continue;
-      cg.fillStyle = `rgba(196,195,189,${0.35 + r() * 0.4})`; cg.beginPath(); cg.arc(X, Y, rad, 0, TAU); cg.fill();
-      if (rad > 1.2) { cg.strokeStyle = 'rgba(252,252,250,0.8)'; cg.lineWidth = 0.6; cg.beginPath(); cg.arc(X, Y, rad, 3.6, 5.4); cg.stroke(); }
-      hg.fillStyle = 'rgba(40,40,40,0.5)'; hg.beginPath(); hg.arc(X, Y, rad, 0, TAU); hg.fill();
-      hg.strokeStyle = 'rgba(230,230,230,0.6)'; hg.lineWidth = 0.7; hg.beginPath(); hg.arc(X, Y, rad, 0, TAU); hg.stroke();
+  const S = 384, r = mulberry(91), s2 = 192;
+  const isl2 = fbmField(s2, s2, 41, 3, 3, 5, 0.62);
+  const islD = upscale(fieldToCanvas(isl2, s2, s2, v => [v * 255, v * 255, v * 255]), S, S).getContext('2d').getImageData(0, 0, S, S).data;
+  const col = new Float32Array(S * S).fill(236), hf = new Float32Array(S * S).fill(0.5);
+  for (let n = 0; n < 7000; n++) { // tiny bubbles: darker pit, bright upper-left rim
+    const cx = r() * S, cy = r() * S, rad = 0.45 + Math.pow(r(), 5) * 3.2, k = 0.2 + r() * 0.35, R = Math.ceil(rad + 1);
+    for (let dy = -R; dy <= R; dy++) for (let dx = -R; dx <= R; dx++) {
+      const px = Math.floor(cx) + dx, py = Math.floor(cy) + dy, d = Math.hypot(px + 0.5 - cx, py + 0.5 - cy) / rad;
+      if (d >= 1.15) continue;
+      const i = ((py + S) % S) * S + ((px + S) % S);
+      if (d < 0.85) { col[i] = lerp(col[i], 206, k); hf[i] = lerp(hf[i], 0.25, 0.4); }
+      else { hf[i] = lerp(hf[i], 0.9, 0.6); if (dx + dy < 0 && rad > 1) col[i] = lerp(col[i], 252, 0.8); }
     }
   }
-  const hd = hg.getImageData(0, 0, S, S).data, hf = new Float32Array(S * S);
-  for (let i = 0; i < S * S; i++) hf[i] = hd[i * 4] / 255;
-  const alpha = fieldToCanvas(isl, S, S, (v, i) => { const a = 255 * clamp(v + (hf[i] - 0.5) * 0.14, 0, 1); return [a, a, a]; });
-  // radial "crown" alpha (impact froth), rotates about its centre
-  const crown = fieldToCanvas(isl, S, S, (v, i) => { const x = (i % S) / (S / 2) - 1, y = Math.floor(i / S) / (S / 2) - 1, d = Math.hypot(x, y); const a = 255 * clamp((1 - d) * 1.5, 0, 1) * clamp((v - 0.42) * 2.2 + (1 - d) * 0.55 + (hf[i] - 0.5) * 0.5, 0, 1); return [a, a, a]; });
-  TEX.fo = { map: mkTex(cc, true, true), alpha: mkTex(alpha, false, true), normal: mkTex(heightToNormal(hf, S, S, 1.6), false, true), crown: mkTex(crown, false, false) };
+  const cc = fieldToCanvas(col, S, S, v => [v, v - 1, v - 4]);
+  const alpha = fieldToCanvas(hf, S, S, (h, i) => { const a = 255 * clamp(islD[i * 4] / 255 + (h - 0.5) * 0.14, 0, 1); return [a, a, a]; });
+  const crown = fieldToCanvas(isl2, s2, s2, (v, i) => { const x = (i % s2) / (s2 / 2) - 1, y = Math.floor(i / s2) / (s2 / 2) - 1, d = Math.hypot(x, y); const a = 255 * clamp((1 - d) * 1.5, 0, 1) * clamp((v - 0.42) * 2.2 + (1 - d) * 0.55 + (r() - 0.5) * 0.5, 0, 1); return [a, a, a]; });
+  TEX.fo = { map: mkTex(cc, true, true), alpha: mkTex(alpha, false, true), normal: mkTex(heightToNormal(hf, S, S, 1.1), false, true), crown: mkTex(crown, false, false) };
   return TEX.fo;
 }
 function texChromeRough() {
   if (TEX.cr) return TEX.cr;
   const S = 256, r = mulberry(13), c = mkCanvas(S, S), g = c.getContext('2d');
-  const f = fbmField(S, S, 3, 4, 4, 4);
-  g.putImageData(fieldToCanvas(f, S, S, v => { const a = 18 + v * 22; return [a, a, a]; }).getContext('2d').getImageData(0, 0, S, S), 0, 0);
+  const f = fbmField(64, 64, 3, 4, 4, 3);
+  g.drawImage(fieldToCanvas(f, 64, 64, v => { const a = 18 + v * 22; return [a, a, a]; }), 0, 0, S, S);
   for (let i = 0; i < 160; i++) { // dried water spots (rings)
     const x = r() * S, y = r() * S, rad = 1 + r() * 5;
     g.strokeStyle = `rgba(150,150,150,${0.25 + r() * 0.4})`; g.lineWidth = 0.6 + r(); g.beginPath(); g.arc(x, y, rad, 0, TAU); g.stroke();
@@ -235,13 +238,18 @@ class Drops {
 function postTextures() {
   if (TEX.post) return TEX.post;
   const W = 128, H = 1024, r = mulberry(7);
-  const f = fbmField(W, H, 17, 2, 16, 5, 0.55);
-  const c = fieldToCanvas(f, W, H, v => { const b = 168 + (v - 0.5) * 30; return [b, b * 0.985, b * 0.955]; });
+  const f = fbmField(W / 2, H / 2, 17, 2, 16, 4, 0.55);
+  const c = upscale(fieldToCanvas(f, W / 2, H / 2, v => { const b = 168 + (v - 0.5) * 30; return [b, b * 0.985, b * 0.955]; }), W, H);
   const g = c.getContext('2d');
-  for (let i = 0; i < 7000; i++) { // granite-like speckles (擬石)
-    const x = r() * W, y = r() * H, s = r() < 0.85 ? 0.8 : 1.6, t = r();
-    g.fillStyle = t < 0.45 ? `rgba(52,50,48,${0.5 + r() * 0.5})` : t < 0.8 ? `rgba(205,203,196,${0.5 + r() * 0.5})` : `rgba(150,128,105,${0.5 + r() * 0.4})`;
-    g.fillRect(x, y, s, s);
+  { // granite-like speckles (擬石), written straight into the pixels
+    const img = g.getImageData(0, 0, W, H), d = img.data;
+    for (let i = 0; i < 6000; i++) {
+      const x = (r() * W) | 0, y = (r() * H) | 0, t = r(), a = 0.5 + r() * 0.5;
+      const c = t < 0.45 ? [52, 50, 48] : t < 0.8 ? [210, 208, 200] : [150, 128, 105];
+      const sz = r() < 0.85 ? 1 : 2;
+      for (let yy = 0; yy < sz; yy++) for (let xx = 0; xx < sz; xx++) { const k = (((y + yy) % H) * W + ((x + xx) % W)) * 4; for (let q = 0; q < 3; q++) d[k + q] = lerp(d[k + q], c[q], a); }
+    }
+    g.putImageData(img, 0, 0);
   }
   // vertical water stains below the tap height and darker splash zone near the ground
   for (let i = 0; i < 26; i++) {
@@ -356,13 +364,10 @@ export function createFaucet(ctx) {
   const crownMats = [];
   for (let k = 0; k < 2; k++) {
     const a = ft.crown.clone(); a.needsUpdate = true; a.center.set(0.5, 0.5); if (k) a.repeat.set(-1, 1);
-    const m = new THREE.MeshStandardMaterial({ color: 0xf4f3ef, emissive: 0x303030, map: ft.map, alphaMap: a, transparent: true, depthWrite: false, roughness: 0.35, opacity: 0.9, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
+    const m = new THREE.MeshStandardMaterial({ color: 0xf2f5f7, emissive: 0x3c4044, map: ft.map, alphaMap: a, transparent: true, depthWrite: false, roughness: 0.35, opacity: 0.9, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
     crownMats.push(m);
     const d = new THREE.Mesh(new THREE.CircleGeometry(1, 32), m); d.rotation.x = -Math.PI / 2; d.position.y = 0.0008 + k * 0.0004; d.renderOrder = 5; crownGroup.add(d);
   }
-  const lumpMat = waterMaterial({ color: 0xe4e8ea, opacity: 0.5, roughness: 0.06, env: 2.0, key: 'lump' }); mats.push(lumpMat);
-  const NLUMP = 14, lumps = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(1, 2), lumpMat, NLUMP); lumps.frustumCulled = false; lumps.renderOrder = 5; crownGroup.add(lumps);
-  const lumpSeed = []; { const r = mulberry(3); for (let i = 0; i < NLUMP; i++) lumpSeed.push([r() * TAU, r(), r() * 10, 0.6 + r() * 0.8]); }
   // drops
   const dropMat = waterMaterial({ color: 0xa0b0b8, opacity: 0.28, roughness: 0.03, env: 2.4, key: 'drop' }); mats.push(dropMat);
   const drops = new Drops(group, Math.round(160 * ((ctx.quality && ctx.quality.particleScale) || 1)), dropMat);
@@ -404,7 +409,6 @@ export function createFaucet(ctx) {
     }
     sGeo.attributes.position.needsUpdate = true; sGeo.attributes.uv.needsUpdate = true; sGeo.computeVertexNormals();
   }
-  const _lm = new THREE.Matrix4(), _lq = new THREE.Quaternion(), _ls = new THREE.Vector3(), _lp = new THREE.Vector3();
   api.update = (dt) => {
     time += dt; envSync(scene, mats);
     const f = flow, fall = TIP_Y - landLocal;
@@ -426,19 +430,11 @@ export function createFaucet(ctx) {
       } else {
         // impact crown + splash
         crownGroup.visible = true; crownGroup.position.set(0, landLocal, TIP_Z);
-        const R = 0.016 + 0.026 * f;
+        const R = 0.016 + 0.024 * f;
         crownGroup.children[0].scale.setScalar(R); crownGroup.children[1].scale.setScalar(R * 0.75);
         crownMats[0].alphaMap.rotation = time * 1.7; crownMats[1].alphaMap.rotation = -time * 2.3;
-                crownMats[0].opacity = 0.6 * smooth(0.1, 0.5, f); crownMats[1].opacity = 0.8 * smooth(0.1, 0.5, f);
+                crownMats[0].opacity = 0.85 * smooth(0.1, 0.5, f); crownMats[1].opacity = smooth(0.1, 0.5, f);
         const rb = r0 * Math.sqrt(v0 / Math.sqrt(v0 * v0 + 2 * 9.8 * fall));
-        for (let i = 0; i < NLUMP; i++) {
-          const s = lumpSeed[i], ph = time * 9 * s[3] + s[2], rr = rb * (1.2 + 2.2 * s[1]);
-          const a = s[0] + time * 0.7;
-          const sc = rb * (0.5 + 0.6 * (0.5 + 0.5 * Math.sin(ph))) * (0.5 + f);
-          _lp.set(Math.cos(a) * rr, 0.0006, Math.sin(a) * rr); _lq.identity(); _ls.set(sc * 1.3, sc * 1.1, sc * 1.3);
-          _lm.compose(_lp, _lq, _ls); lumps.setMatrixAt(i, _lm);
-        }
-        lumps.instanceMatrix.needsUpdate = true;
         splashAcc += dt * 40 * f * ((ctx.quality && ctx.quality.particleScale) || 1);
         while (splashAcc > 1) {
           splashAcc -= 1; const a = Math.random() * TAU, s = 0.25 + Math.random() * 0.45 * f;
@@ -463,10 +459,10 @@ function innerR(y) { // inner wall radius at local height y (water edge)
 function basinTextures() {
   if (TEX.basin) return TEX.basin;
   const W = 512, H = 256, r = mulberry(29);
-  const f = fbmField(W, H, 61, 8, 4, 4);
-  const rc = fieldToCanvas(f, W, H, v => { const a = 70 + v * 22; return [a, a, a]; }); // roughness ~0.3
+  const f = fbmField(W / 2, H / 2, 61, 8, 4, 3);
+  const rc = upscale(fieldToCanvas(f, W / 2, H / 2, v => { const a = 70 + v * 22; return [a, a, a]; }), W, H); // roughness ~0.3
   const g = rc.getContext('2d');
-  const cc = fieldToCanvas(f, W, H, v => { const a = 244 + (v - 0.5) * 14; return [a, a, a]; }); // colour modulation (×basin colour)
+  const cc = upscale(fieldToCanvas(f, W / 2, H / 2, v => { const a = 244 + (v - 0.5) * 14; return [a, a, a]; }), W, H); // colour modulation (×basin colour)
   const c2 = cc.getContext('2d');
   for (let i = 0; i < 900; i++) { // fine scratches & scuffs
     const x = r() * W, y = r() * H, len = 3 + r() * 26, a = (r() - 0.5) * 0.9 + (r() < 0.5 ? 0 : Math.PI / 2);
@@ -580,10 +576,10 @@ export function createBasin(ctx) {
           diffuseColor.a = mix(diffuseColor.a, max(diffuseColor.a, 0.6), ce * 0.75);`)
         .replace('#include <normal_fragment_maps>', `
           vec2 wp = vNormalMapUv;
-          vec2 g1 = texture2D(normalMap, wp * 2.3 + vec2(uTime * 0.021, uTime * 0.013)).xy * 2.0 - 1.0;
-          vec2 g2 = texture2D(normalMap, wp * vec2(-3.7, 3.1) + vec2(-uTime * 0.017, uTime * 0.027)).xy * 2.0 - 1.0;
-          vec2 g3 = texture2D(normalMap, wp * 9.0 + vec2(uTime * 0.09, -uTime * 0.07)).xy * 2.0 - 1.0;
-          vec2 gg = (g1 + g2 * 0.8) * normalScale.x + g3 * (0.05 + uAg * 0.5) * (1.0 - uMurkW * 0.5);
+          vec2 g1 = texture2D(normalMap, wp * 3.4 + vec2(uTime * 0.021, uTime * 0.013)).xy * 2.0 - 1.0;
+          vec2 g2 = texture2D(normalMap, wp * vec2(-5.3, 4.7) + vec2(-uTime * 0.017, uTime * 0.027)).xy * 2.0 - 1.0;
+          vec2 g3 = texture2D(normalMap, wp * 13.0 + vec2(uTime * 0.09, -uTime * 0.07)).xy * 2.0 - 1.0;
+          vec2 gg = (g1 + g2 * 0.8) * normalScale.x + g3 * (0.04 + uAg * 0.25) * (1.0 - uMurkW * 0.5);
           for (int k = 0; k < ${MAXR}; k++) {
             vec4 R = uRip[k];
             if (R.z < 4.0) {
@@ -631,16 +627,16 @@ export function createBasin(ctx) {
   for (let i = 25; i >= 10; i--) { const p = prof[i], nr = p[0] + 0.0014; if (i <= 18 || p[1] < 0.1265) ofProf.push(new THREE.Vector2(nr, p[1] + (i === 25 ? 0.001 : 0))); }
   ofProf.reverse();
   const ofGeo = new THREE.LatheGeometry(ofProf, SEG);
-  { const uv = ofGeo.attributes.uv, n = ofProf.length; for (let i = 0; i < uv.count; i++) { uv.setX(i, uv.getX(i) * 14); uv.setY(i, (i % n) / (n - 1) * 1.5); } }
+  { const uv = ofGeo.attributes.uv, n = ofProf.length; for (let i = 0; i < uv.count; i++) { uv.setX(i, uv.getX(i) * 9); uv.setY(i, (i % n) / (n - 1) * 1.5); } }
   const ofN = texStreamN().clone(); ofN.needsUpdate = true; const ofA = texStreak().clone(); ofA.needsUpdate = true;
-  const ofMat = waterMaterial({ color: 0x6f8890, opacity: 0.5, roughness: 0.04, env: 1.8, normalMap: ofN, ns: 0.7, alphaMap: ofA, gate: 1, key: 'overflow' });
+  const ofMat = waterMaterial({ color: 0x6f8890, opacity: 0.5, roughness: 0.04, env: 1.3, normalMap: ofN, ns: 0.45, alphaMap: ofA, gate: 1, key: 'overflow' });
   mats.push(ofMat);
   const overflowMesh = new THREE.Mesh(ofGeo, ofMat); overflowMesh.visible = false; overflowMesh.renderOrder = 2; body.add(overflowMesh);
   // wet ground (ring around the tub and puddle under the pour)
   const wetMat = new THREE.MeshPhysicalMaterial({ color: 0x1c1a17, roughness: 0.2, transparent: true, opacity: 0, depthWrite: false, envMapIntensity: 0.6, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 });
   mats.push(wetMat);
-  const wetA = fbmField(128, 128, 5, 4, 4, 4);
-  const wetTex = mkTex(fieldToCanvas(wetA, 128, 128, (v, i) => { const x = (i % 128) / 64 - 1, y = Math.floor(i / 128) / 64 - 1, d = Math.hypot(x, y); const a = 255 * clamp((0.75 - d) * 7 + (v - 0.5) * 4, 0, 1); return [a, a, a]; }), false, false);
+  const wetA = fbmField(96, 96, 5, 4, 4, 3);
+  const wetTex = mkTex(fieldToCanvas(wetA, 96, 96, (v, i) => { const x = (i % 96) / 48 - 1, y = Math.floor(i / 96) / 48 - 1, d = Math.hypot(x, y); const a = 255 * clamp((0.75 - d) * 7 + (v - 0.5) * 4, 0, 1); return [a, a, a]; }), false, false);
   wetMat.alphaMap = wetTex;
   const ring = new THREE.Mesh(new THREE.RingGeometry(0.2, 0.36, 72, 1), wetMat.clone()); ring.rotation.x = -Math.PI / 2; ring.position.y = 0.0006; ring.visible = false; group.add(ring);
   ring.material.alphaMap = null; mats.push(ring.material);
@@ -781,7 +777,7 @@ export function createBasin(ctx) {
     waterMat.color.copy(tmpC);
     waterMat.opacity = lerp(0.2, 0.975, mk); waterMat.envMapIntensity = lerp(1.7, 1.3, murk);
     waterMat.roughness = lerp(0.025, 0.14, murk);
-    waterMat.normalScale.setScalar((0.22 + agit * 0.5 + pour * 0.3) * (1 - murk * 0.3));
+    waterMat.normalScale.setScalar((0.13 + Math.min(agit, 1) * 0.12 + pour * 0.2) * (1 - murk * 0.3));
     water.visible = hasWater;
     foam.visible = hasWater && foamAmt > 0.01;
     foamMat.color.setRGB(lerp(0.9, 0.5, murk), lerp(0.9, 0.48, murk), lerp(0.87, 0.43, murk));
@@ -812,7 +808,7 @@ export function createBasin(ctx) {
     } else puddle.visible = false;
     // overflow
     if (overflow > 0.01) {
-      overflowMesh.visible = true; ofMat.opacity = 0.25 + 0.6 * overflow; ofN.offset.y += dt * 2.0; ofA.offset.y += dt * 0.9;
+      overflowMesh.visible = true; ofMat.opacity = 0.12 + 0.3 * overflow; ofN.offset.y += dt * 2.0; ofA.offset.y += dt * 0.9;
       ofMat.color.copy(mcol).lerp(new THREE.Color(0x7d8f98), 1 - smooth(0, 0.6, murk));
       wetRing = Math.min(1, wetRing + dt * 0.8 * overflow);
     } else overflowMesh.visible = false;
@@ -918,7 +914,7 @@ export function createBrush(ctx) {
     if (side < 0.5) { x = (rnd() - 0.5) * 0.03; z = (rnd() - 0.5) * 0.05; y = rnd() * 0.01; }                    // among the bristle tips
     else if (side < 0.85) { const a = rnd() * TAU; x = Math.cos(a) * 0.018; z = Math.sin(a) * 0.028; y = 0.003 + rnd() * 0.016; } // around the tuft field
     else { x = (rnd() - 0.5) * 0.03; z = (rnd() - 0.5) * 0.04 - 0.005; y = ROOT_Y + 0.0122; }                  // on the head
-    const th = rnd(), big = 0.0016 + rnd() * 0.0022;
+    const th = rnd(), big = 0.0022 + rnd() * 0.0028;
     for (let k = 0; k < 7; k++) {
       const rr = big * (k === 0 ? 1 : 0.25 + rnd() * 0.55), a = rnd() * TAU, d = k === 0 ? 0 : big * (0.8 + rnd() * 0.7);
       blobs.push({ x: x + Math.cos(a) * d, y: y + (rnd() - 0.3) * big * 0.6, z: z + Math.sin(a) * d, r: rr, th: Math.min(0.99, th + k * 0.02), sq: 0.7 + rnd() * 0.3 });
@@ -949,8 +945,8 @@ export function createBrush(ctx) {
 function soapTextures() {
   if (TEX.soap) return TEX.soap;
   const S = 256, r = mulberry(55);
-  const f = fbmField(S, S, 9, 4, 4, 5);
-  const col = fieldToCanvas(f, S, S, v => [150 + v * 26, 200 + v * 18, 132 + v * 20]);
+  const f = fbmField(S / 2, S / 2, 9, 4, 4, 4);
+  const col = upscale(fieldToCanvas(f, S / 2, S / 2, v => [150 + v * 26, 200 + v * 18, 132 + v * 20]), S, S);
   const g = col.getContext('2d');
   for (let i = 0; i < 300; i++) { g.fillStyle = `rgba(250,255,240,${r() * 0.15})`; g.fillRect(r() * S, r() * S, 1 + r() * 2, 1 + r() * 2); }
   // bump: embossed blank oval (raised rim, slightly sunken panel), soft from wear; blank border
@@ -960,11 +956,11 @@ function soapTextures() {
   for (let k = 8; k >= 1; k--) { bg.strokeStyle = `rgba(255,255,255,${0.12})`; bg.lineWidth = k * 1.6; bg.beginPath(); bg.arc(0, 0, S * 0.3, 0, TAU); bg.stroke(); }
   bg.fillStyle = 'rgba(100,100,100,0.6)'; bg.beginPath(); bg.arc(0, 0, S * 0.27, 0, TAU); bg.fill();
   bg.restore();
-  const bd = bg.getImageData(0, 0, S, S).data, nz = fbmField(S, S, 19, 8, 8, 3), hf = new Float32Array(S * S);
-  for (let i = 0; i < S * S; i++) hf[i] = bd[i * 4] / 255 + (nz[i] - 0.5) * 0.04;
+  const bd = bg.getImageData(0, 0, S, S).data, hf = new Float32Array(S * S);
+  for (let i = 0; i < S * S; i++) hf[i] = bd[i * 4] / 255 + (r() - 0.5) * 0.015;
   // roughness: wet glossy patches
-  const rf = fbmField(S, S, 33, 3, 3, 4);
-  const rc = fieldToCanvas(rf, S, S, v => { const a = 255 * lerp(0.22, 0.6, smooth(0.35, 0.7, v)); return [a, a, a]; });
+  const rf = fbmField(64, 64, 33, 3, 3, 3);
+  const rc = upscale(fieldToCanvas(rf, 64, 64, v => { const a = 255 * lerp(0.22, 0.6, smooth(0.35, 0.7, v)); return [a, a, a]; }), S, S);
   TEX.soap = { map: mkTex(col, true, false), normal: mkTex(heightToNormal(hf, S, S, 4.0), false, false), rough: mkTex(rc, false, false) };
   return TEX.soap;
 }

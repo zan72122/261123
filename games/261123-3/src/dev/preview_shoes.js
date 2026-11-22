@@ -11,8 +11,9 @@ const CAMS = {
   half: { cam: [0.02, 0.42, 0.22], look: [0.02, 0.03, 0], fov: 45 },
   side: { cam: [0.22, 0.12, 0.18], look: [0, 0.03, 0], fov: 40 },
   top: { cam: [0.0, 0.5, 0.001], look: [0, 0, 0], fov: 30 },
+  bagempty: { cam: [0.30, 0.50, 0.55], look: [0.0, 0.02, 0.0], fov: 40 },
   bag: { cam: [0.30, 0.50, 0.55], look: [0.0, 0.02, 0.04], fov: 40 },
-  baghang: { cam: [0.05, 0.86, 0.75], look: [0.0, 0.80, 0], fov: 45 },
+  baghang: { cam: [0.0, 0.86, 0.95], look: [0.0, 0.79, 0], fov: 45 },
 };
 
 startPreview(({ THREE, scene, ctx }) => {
@@ -23,6 +24,7 @@ startPreview(({ THREE, scene, ctx }) => {
     const L = mk('L'), R = mk('R');
     L.group.position.x = -0.053; R.group.position.x = 0.053;
     if (view === 'pair' || view === 'top') { L.cleanAll(); R.cleanAll(); }
+    for (const s of [L, R]) { if (q.get('wet')) s.setWet(+q.get('wet')); if (q.get('shine')) s.setShine(+q.get('shine')); }
     if (view === 'half') {
       for (const s of [L, R]) {
         // a few brush strokes, several passes each
@@ -45,23 +47,30 @@ startPreview(({ THREE, scene, ctx }) => {
     bag.mouth.add(s.group);
     // upright, heel out of the mouth; sole ~on the underside cloth
     s.group.position.set(0.04, -bag.mouth.position.y + 0.004, -0.05);
+  } else if (view === 'bagempty') {
+    bag = createBag(ctx); scene.add(bag.group);
+    bag.setPose(q.get('pose') || 'lying'); bag.setFill(+(q.get('fill') || 0)); bag.setDusty(+(q.get('dusty') || 0)); bag.setOpen(+(q.get('open') || 0));
+    if (q.get('squish')) bag.squish(1);
   } else if (view === 'baghang') {
     bag = createBag(ctx); scene.add(bag.group);
     bag.setPose('hanging'); bag.setFill(2); bag.setDusty(0); bag.setOpen(1);
-    bag.group.position.set(-0.08, 0.98, 0);
+    bag.group.position.set(-0.075, 0.98, 0);
     for (const [i, side] of [[0, 'L'], [1, 'R']]) {
       const s = mk(side); s.cleanAll(); s.setShine(0.6);
       bag.mouth.add(s.group);
-      // mouth frame: +Z out of the bag (up), local -Y = toward the bag front (+Z of the bag)
-      s.group.position.set(i ? 0.04 : -0.04, -0.024, -0.05);
+      // mouth frame: +Z out of the bag (up), local +Y = toward the bag back (-Z of the bag).
+      // rotate 180 deg about the shoe's long axis so the opening faces the bag front (+Z)
+      s.group.position.set(i ? 0.04 : -0.04, 0.024, -0.05);
+      s.group.rotation.set(0, 0, Math.PI);
     }
     const h = mk('R'); h.cleanAll(); h.setShine(0.6);
-    h.group.position.set(0.12, 0.98, 0);
+    h.group.position.set(0.1, 0.98, 0);
     h.group.rotation.set(-Math.PI / 2, 0, 0); h.group.rotateOnWorldAxis(new THREE.Vector3(0, 1, 0), -1.75); // heel up, toe down
     h.group.position.y = 0.98 - 0.095; // heel tab near the clip
     // clip marker lines
     const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.004, 0.004, 0.5, 8), new THREE.MeshStandardMaterial({ color: 0x8899aa, metalness: 0.6, roughness: 0.3 }));
     pole.rotation.z = Math.PI / 2; pole.position.set(0.02, 0.99, 0); scene.add(pole);
   }
+  window.__shoes = shoes; window.__bag = bag;
   return (dt) => { for (const s of shoes) s.update(dt); if (bag) bag.update(dt); };
 }, CAMS[view] || CAMS.pair);

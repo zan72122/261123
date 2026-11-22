@@ -159,7 +159,7 @@ export function createBag(ctx) {
   // ---- shape model, bag frame: X across, Y along (0 bottom .. LEN mouth), Z thickness (front +)
   const lumps = (u, v, hanging) => {
     const s1 = Math.min(1, Math.max(0, st.fill)), s2 = Math.min(1, Math.max(0, st.fill - 1));
-    const lu = (c) => Math.exp(-Math.pow((u - c) / 0.24, 4));
+    const lu = (c) => Math.exp(-Math.pow((u - c) / 0.25, 6));
     let along;
     if (hanging) along = sm(0.3, 0.45, v) * (0.85 + 0.15 * sm(0.8, 0.45, v)); // toe boxes low, heels at the mouth
     else along = sm(0.22, 0.45, v) * (0.85 + 0.15 * sm(0.5, 0.85, v));                          // shoes toward the mouth
@@ -181,7 +181,7 @@ export function createBag(ctx) {
     const lump = lumps(u, v, hanging);
     const base = T0 * eu * evb;
     const eu2 = Math.pow(Math.max(0, Math.sin(Math.PI * u)), 0.22);
-    let thick = Math.max(base * (1 - top) + mouthGap * top, base + 0.021 * lump * eu2);
+    let thick = Math.max(base * (1 - top) + mouthGap * top, base + 0.024 * lump * eu2);
     // soft static wrinkles + drawstring pleats
     const wr = 0.0011 * (Math.sin(u * 9.1 + v * 13.7) + 0.6 * Math.sin(u * 17.3 - v * 7.9 + 1.3)) * eu * evb;
     const pleat = (1 - st.open) * 0.0042 * Math.sin(u * Math.PI * 2 * 7.5) * sm(0.78, 1.0, v) * eu;

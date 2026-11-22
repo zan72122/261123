@@ -74,15 +74,35 @@ export function shoePose(ctx, i, where) {
   return { parent, pos, quat };
 }
 
-// Pose of shoe i inside the HANGING bag (bag-local): toe down, white heel peeking out of the mouth.
+// Pose of shoe i inside the HANGING bag: child of bag.mouth, toe down, white heel peeking out of the mouth,
+// the shoe's opening facing the bag's front.
 export function packedPose(ctx, i) {
-  const shoe = ctx.shoes[i];
-  const quat = Q_HANG.clone();
-  const heelTop = new THREE.Vector3(0, shoe.HEIGHT * 0.5, shoe.LENGTH / 2).applyQuaternion(quat);
-  const want = new THREE.Vector3(PACK.x, PACK.heelY, i ? PACK.dz : -PACK.dz); // where the heel end should be, bag-local
-  return { parent: ctx.bag.group, pos: want.sub(heelTop), quat };
+  const quat = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0, Math.PI));
+  return { parent: ctx.bag.mouth, pos: new THREE.Vector3(i ? 0.04 : -0.04, 0.024, -0.05), quat };
 }
-export const PACK = { x: 0, heelY: -0.035, dz: 0.045 };  // tuned to the bag model (hanging pose, origin = top of loop)
+
+// Pose of a shoe peeking out of the mouth of the LYING bag (heel sticks out ~4.5 cm). out = extra metres pulled out.
+export function peekPose(ctx, out = 0) {
+  return { parent: ctx.bag.mouth, pos: new THREE.Vector3(0, -ctx.bag.mouth.position.y + 0.004, -0.05 + out), quat: new THREE.Quaternion() };
+}
+
+// Hang the bag from clip 2 (garden stages) or lay it on the terrace (wash stages).
+export function placeBag(ctx, hanging) {
+  const bag = ctx.bag;
+  if (hanging) {
+    bag.setPose('hanging');
+    ctx.hanger.clips[2].pivot.add(bag.group);
+    bag.group.position.set(0, 0, 0);
+    bag.group.rotation.set(0, -Math.PI / 2, 0);     // flat front toward -X (the garden-view camera)
+    ctx.hanger.clips[2].setOpen(0); ctx.hanger.clips[2].setLoad(0.6);
+  } else {
+    bag.setPose('lying');
+    ctx.scene.add(bag.group);
+    bag.group.position.fromArray(L.BAG_START);
+    bag.group.rotation.set(0, L.BAG_YAW, 0);
+    ctx.hanger.clips[2].setLoad(0);
+  }
+}
 
 export function putShoe(ctx, i, where) {
   const g = ctx.shoes[i].group, rig = ctx.rigs[i];

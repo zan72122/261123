@@ -372,11 +372,11 @@ function buildBand(S, low) {
 function buildTab(S) {
   const r = S.rim[0]; const z0 = r.z, y0 = r.y, x0 = r.x;
   const curve = new THREE.CatmullRomCurve3([
-    new THREE.Vector3(x0, y0 - 0.0075, z0 - 0.0027), new THREE.Vector3(x0, y0 + 0.000, z0 - 0.0024),
-    new THREE.Vector3(x0, y0 + 0.0045, z0 - 0.0002), new THREE.Vector3(x0, y0 + 0.0058, z0 + 0.0028),
-    new THREE.Vector3(x0, y0 + 0.0035, z0 + 0.0052), new THREE.Vector3(x0, y0 - 0.002, z0 + 0.0050),
-    new THREE.Vector3(x0, y0 - 0.009, z0 + 0.0056)]);
-  const NS = 28, RS = 10, hw = 0.0045, ht = 0.0009, pos = [], nrm = [], uv = [];
+    new THREE.Vector3(x0, y0 - 0.0075, z0 - 0.0027), new THREE.Vector3(x0, y0 + 0.000, z0 - 0.0023),
+    new THREE.Vector3(x0, y0 + 0.0047, z0 - 0.0006), new THREE.Vector3(x0, y0 + 0.0060, z0 + 0.0013),
+    new THREE.Vector3(x0, y0 + 0.0046, z0 + 0.0033), new THREE.Vector3(x0, y0 - 0.0015, z0 + 0.0040),
+    new THREE.Vector3(x0, y0 - 0.009, z0 + 0.0050)]);
+  const NS = 28, RS = 10, hw = 0.0045, ht = 0.0011, pos = [], nrm = [], uv = [];
   for (let i = 0; i <= NS; i++) {
     const t = i / NS, p = curve.getPoint(t), tg = curve.getTangent(t);
     const side = new THREE.Vector3(1, 0, 0), nn = new THREE.Vector3().crossVectors(tg, side).normalize();
@@ -427,11 +427,11 @@ function buildTextures() {
     const warp = fbm(u, v, 3, 3, 91) - 0.5;
     let r = fbm(u + warp * 0.08, v - warp * 0.07, 7, 5, 7); r = Math.min(1, Math.max(0, (r - 0.5) * 1.9 + 0.5));
     // fine cracks in dried crust
-    const cr = Math.abs(fbm(u, v, 10, 3, 33) - 0.5); const crack = (cr < 0.009 && r > 0.5) ? 1 : 0;
+    const cr = Math.abs(fbm(u, v, 10, 3, 33) - 0.5); const crack = (cr < 0.006 && r > 0.55) ? 1 : 0;
     let g = 0; const hh = hash2(x, y, 5); if (hh > 0.985) g = 0.55 + 0.45 * hash2(x, y, 6); else if (hh > 0.965) g = 0.22;
     const b = fbm(u, v, 9, 4, 51);
     const a = fbm(u, v, 24, 3, 71);
-    md[o] = (crack ? r * 0.6 : r) * 255; md[o + 1] = g * 255; md[o + 2] = Math.min(1, Math.max(0, (b - 0.5) * 1.9 + 0.5)) * 255; md[o + 3] = a * 255;
+    md[o] = (crack ? r * 0.8 : r) * 255; md[o + 1] = g * 255; md[o + 2] = Math.min(1, Math.max(0, (b - 0.5) * 1.9 + 0.5)) * 255; md[o + 3] = a * 255;
   }
   const mud = new THREE.DataTexture(md, MS, MS, THREE.RGBAFormat);
   mud.wrapS = mud.wrapT = THREE.RepeatWrapping; mud.magFilter = THREE.LinearFilter; mud.minFilter = THREE.LinearMipmapLinearFilter; mud.generateMipmaps = true; mud.needsUpdate = true;
@@ -564,6 +564,12 @@ vec3 clean = canvasC; float cleanR = canvasR; float capM = 0.0; float sideW = sm
   float cph = fract((lp.x + lp.y * 0.8) / 0.0025);
   float cst = (1.0 - smoothstep(0.00022, 0.00022 + fc, ce)) * smoothstep(0.08, 0.22, cph) * smoothstep(0.78, 0.64, cph) * (1.0 - bindM);
   clean *= 1.0 - cst * 0.16; myH -= cst * 0.00018;
+  // heel back seam: two stitch rows either side of the centre-back
+  float hb = min(vRim.y, uCap.w - vRim.y);
+  float hph = fract(rd / 0.0025);
+  float hst = (1.0 - smoothstep(0.00022, 0.00022 + fwidth(hb) + 0.00008, abs(hb - 0.0022))) * smoothstep(0.08, 0.22, hph) * smoothstep(0.78, 0.64, hph) * step(0.0045, rd) * step(vLP.y, 0.05);
+  float hsm = 1.0 - smoothstep(0.0004, 0.0004 + fwidth(hb) + 0.0001, hb);
+  clean *= (1.0 - hst * 0.16) * (1.0 - hsm * 0.08 * step(0.0045, rd)); myH -= hst * 0.00018 + hsm * 0.00025;
   // felt-pen mark (planar from above)
   vec2 muv = vec2((lp.x - uMarkP.x) / uMarkP.z + 0.5, 0.5 - (lp.z - uMarkP.y) / uMarkP.z);
   if (muv.x > 0.0 && muv.x < 1.0 && muv.y > 0.0 && muv.y < 1.0) {
@@ -619,14 +625,14 @@ vec4 mudS = texture2D(uMud, vec2(lp.x + lp.z, lp.y * 1.4) * 9.0 + 0.37);
 vec4 mud = mix(mudS, mudT, smoothstep(0.25, 0.75, abs(ln.y)));
 float thr = mud.b;
 // thick crust patches (break up last) + a translucent smeared film (fades gradually)
-float dA = smoothstep(thr * 0.5 + 0.33, thr * 0.5 + 0.5, dAmt);
-float film = smoothstep(0.0, 0.85, dAmt) * 0.88;
+float dA = smoothstep(thr * 0.45 + 0.3, thr * 0.45 + 0.55, dAmt);
+float film = smoothstep(0.0, 0.72, dAmt);
 float crust = smoothstep(0.42, 0.82, mud.r);
 vec3 mc = mix(vec3(0.024, 0.017, 0.011), vec3(0.085, 0.070, 0.052), crust);
 mc *= 0.75 + 0.5 * mud.a;
-mc = mix(mc, vec3(0.28, 0.225, 0.155), mud.g * (0.35 + 0.65 * crust));
-float mr = mix(0.6, 0.97, crust); mr = mix(mr, mr * 0.5, uWet);
-vec3 filmC = mix(vec3(0.22, 0.19, 0.15), vec3(0.05, 0.038, 0.028), smoothstep(0.15, 0.8, dAmt)) * (0.8 + 0.4 * mud.a);
+mc = mix(mc, vec3(0.19, 0.155, 0.11), mud.g * (0.3 + 0.7 * crust));
+float mr = mix(0.62, 0.97, crust); mr = mix(mr, mr * 0.72, uWet);
+vec3 filmC = mix(vec3(0.25, 0.215, 0.17), mc * 1.4, smoothstep(0.1, 0.7, dAmt)) * (0.85 + 0.3 * mud.a);
 clean = mix(clean, filmC, film);
 cleanR = mix(cleanR, max(cleanR, 0.8), film);
 vec3 alb = mix(clean, mc, dA);
@@ -753,7 +759,7 @@ export function createShoe(ctx, { side = 'R' } = {}) {
     uDirt: { value: dTex }, uMud: { value: TEX.mud }, uMark: { value: side === 'L' ? TEX.markL : TEX.markR }, uAux: { value: TEX.treadAux },
     uAvg: { value: 1 }, uWet: { value: 0 }, uShine: { value: 0 },
     uCapCol: { value: CAP_RED.clone().convertSRGBToLinear() },
-    uCap: { value: new THREE.Vector4(S.CAP.z0, S.CAP.k, sg * S.CAP.xc, 0) },
+    uCap: { value: new THREE.Vector4(S.CAP.z0, S.CAP.k, sg * S.CAP.xc, S.rimArc[S.ND]) },
     uMarkP: { value: new THREE.Vector4(sg * S.MARK.x, S.MARK.z, S.MARK.size, 0) },
     uBox: { value: new THREE.Vector4(X0, Z0, 1 / (X1 - X0), 1 / (Z1 - Z0)) },
   };
@@ -818,6 +824,7 @@ export function createShoe(ctx, { side = 'R' } = {}) {
         if (dirt[o] > mx) mx = dirt[o];
         let s = 0;
         for (let dz = -3; dz <= 3; dz++) { const jz = iz + dz; if (jz < 0 || jz >= GZ) continue; for (let dx = -3; dx <= 3; dx++) { const jx = ix + dx; if (jx < 0 || jx >= GX) continue; s += dirt[jz * GX + jx] * W[jz * GX + jx]; } }
+        s -= ((ix - GX / 2) ** 2 + (iz - GZ / 2) ** 2) * 1e-4;
         if (s > best) { best = s; bi = o; }
       }
       if (mx < 0.04 || bi < 0) return null;
@@ -835,18 +842,30 @@ export function createShoe(ctx, { side = 'R' } = {}) {
     setWet(w) { U.uWet.value = Math.min(1, Math.max(0, w)); },
     setShine(s) { U.uShine.value = Math.min(1, Math.max(0, s)); },
     serialize() {
-      // 4-bit quantised, two cells per byte, base64
-      const b = new Uint8Array(GX * GZ / 2);
-      for (let k = 0; k < b.length; k++) b[k] = (Math.round(dirt[2 * k] * 15) << 4) | Math.round(dirt[2 * k + 1] * 15);
-      let s = ''; for (let k = 0; k < b.length; k++) s += String.fromCharCode(b[k]);
-      return 'u1' + btoa(s);
+      // 0..250 quantised bytes; runs of fully clean (251,n) / fully dirty (252,n) cells are run-length coded; base64
+      const out = []; const n = dirt.length;
+      for (let k = 0; k < n;) {
+        const q = Math.round(dirt[k] * 250);
+        if (q === 0 || q === 250) {
+          let r = 1; while (k + r < n && r < 255 && Math.round(dirt[k + r] * 250) === q) r++;
+          if (r >= 2) { out.push(q === 0 ? 251 : 252, r); k += r; continue; }
+        }
+        out.push(q); k++;
+      }
+      let str = ''; for (let k = 0; k < out.length; k++) str += String.fromCharCode(out[k]);
+      return 'u2' + btoa(str);
     },
     deserialize(str) {
       try {
-        if (typeof str !== 'string' || str.slice(0, 2) !== 'u1') throw 0;
-        const s = atob(str.slice(2)); if (s.length !== GX * GZ / 2) throw 0;
-        for (let k = 0; k < s.length; k++) { const v = s.charCodeAt(k); dirt[2 * k] = (v >> 4) / 15; dirt[2 * k + 1] = (v & 15) / 15; }
-        recompute();
+        if (typeof str !== 'string' || str.slice(0, 2) !== 'u2') throw 0;
+        const b = atob(str.slice(2)); const tmp = new Float32Array(dirt.length); let k = 0;
+        for (let i = 0; i < b.length; i++) {
+          const c = b.charCodeAt(i);
+          if (c === 251 || c === 252) { const r = b.charCodeAt(++i); if (!(r > 0) || k + r > tmp.length) throw 0; tmp.fill(c === 251 ? 0 : 1, k, k + r); k += r; }
+          else { if (c > 250 || k >= tmp.length) throw 0; tmp[k++] = c / 250; }
+        }
+        if (k !== tmp.length) throw 0;
+        dirt.set(tmp); recompute();
       } catch (e) { api.setDirtFull(); }
     },
     update() {
