@@ -90,22 +90,24 @@ function texStreak() { // vertical rivulet streaks (alpha), u periodic
   const f = fbmField(128, 128, 77, 8, 1, 4, 0.55);
   return (TEX.st = mkTex(fieldToCanvas(f, 128, 128, v => { const a = 255 * smooth(0.25, 0.75, v); return [a, a, a]; }), false, true));
 }
-function texCaustic() {
+function texCaustic() { // domain-warped cellular network: curvy bright caustic lines
   if (TEX.ca) return TEX.ca;
-  const S = 256, C = 6, r = mulberry(5), pts = [];
-  for (let j = 0; j < C; j++) for (let i = 0; i < C; i++) pts.push([(i + 0.15 + r() * 0.7) / C, (j + 0.15 + r() * 0.7) / C]);
+  const S = 256, C = 5, r = mulberry(5), pts = [];
+  for (let j = 0; j < C; j++) for (let i = 0; i < C; i++) pts.push([(i + 0.2 + r() * 0.6) / C, (j + 0.2 + r() * 0.6) / C]);
+  const wx = periodicNoise(71, 4, 4), wy = periodicNoise(72, 4, 4);
   const f = new Float32Array(S * S);
   for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
-    const u = x / S, v = y / S, ci = Math.floor(u * C), cj = Math.floor(v * C); let f1 = 9, f2 = 9;
+    let u = x / S, v = y / S; const du = (wx(u * 4, v * 4) - 0.5) * 0.16, dv = (wy(u * 4, v * 4) - 0.5) * 0.16;
+    u = ((u + du) % 1 + 1) % 1; v = ((v + dv) % 1 + 1) % 1;
+    const ci = Math.floor(u * C), cj = Math.floor(v * C); let f1 = 9, f2 = 9;
     for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) {
       const ii = (ci + di + C) % C, jj = (cj + dj + C) % C, p = pts[jj * C + ii];
-      const px = p[0] + ((ci + di) - ii) / C, py = p[1] + ((cj + dj) - jj) / C;
-      const d = Math.hypot(u - px, v - py) * C;
+      const d = Math.hypot(u - (p[0] + (ci + di - ii) / C), v - (p[1] + (cj + dj - jj) / C)) * C;
       if (d < f1) { f2 = f1; f1 = d; } else if (d < f2) f2 = d;
     }
-    f[y * S + x] = f2 - f1;
+    f[y * S + x] = (f2 - f1) + f1 * 0.12;
   }
-  return (TEX.ca = mkTex(fieldToCanvas(f, S, S, v => { const a = 255 * Math.pow(Math.max(0, 1 - v / 0.38), 2.0); return [a, a, a]; }), false, true));
+  return (TEX.ca = mkTex(fieldToCanvas(f, S, S, v => { const a = 255 * Math.pow(Math.max(0, 1 - v / 0.3), 2.4); return [a, a, a]; }), false, true));
 }
 // soap foam: color (sRGB), alpha (density field; shader thresholds it), normal (fine bubbles)
 function texFoam() {
@@ -132,7 +134,7 @@ function texFoam() {
   for (let i = 0; i < S * S; i++) hf[i] = hd[i * 4] / 255;
   const alpha = fieldToCanvas(isl, S, S, (v, i) => { const a = 255 * clamp(v + (hf[i] - 0.5) * 0.14, 0, 1); return [a, a, a]; });
   // radial "crown" alpha (impact froth), rotates about its centre
-  const crown = fieldToCanvas(isl, S, S, (v, i) => { const x = (i % S) / (S / 2) - 1, y = Math.floor(i / S) / (S / 2) - 1, d = Math.hypot(x, y); const a = 255 * clamp((1 - d) * 1.6, 0, 1) * clamp((v - 0.2) * 1.6 + (1 - d) * 0.7 + (hf[i] - 0.5) * 0.3, 0, 1); return [a, a, a]; });
+  const crown = fieldToCanvas(isl, S, S, (v, i) => { const x = (i % S) / (S / 2) - 1, y = Math.floor(i / S) / (S / 2) - 1, d = Math.hypot(x, y); const a = 255 * clamp((1 - d) * 1.5, 0, 1) * clamp((v - 0.42) * 2.2 + (1 - d) * 0.55 + (hf[i] - 0.5) * 0.5, 0, 1); return [a, a, a]; });
   TEX.fo = { map: mkTex(cc, true, true), alpha: mkTex(alpha, false, true), normal: mkTex(heightToNormal(hf, S, S, 1.6), false, true), crown: mkTex(crown, false, false) };
   return TEX.fo;
 }
@@ -358,7 +360,7 @@ export function createFaucet(ctx) {
     crownMats.push(m);
     const d = new THREE.Mesh(new THREE.CircleGeometry(1, 32), m); d.rotation.x = -Math.PI / 2; d.position.y = 0.0008 + k * 0.0004; d.renderOrder = 5; crownGroup.add(d);
   }
-  const lumpMat = waterMaterial({ color: 0xd8dde0, opacity: 0.35, roughness: 0.06, env: 2.0, key: 'lump' }); mats.push(lumpMat);
+  const lumpMat = waterMaterial({ color: 0xe4e8ea, opacity: 0.5, roughness: 0.06, env: 2.0, key: 'lump' }); mats.push(lumpMat);
   const NLUMP = 14, lumps = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(1, 2), lumpMat, NLUMP); lumps.frustumCulled = false; lumps.renderOrder = 5; crownGroup.add(lumps);
   const lumpSeed = []; { const r = mulberry(3); for (let i = 0; i < NLUMP; i++) lumpSeed.push([r() * TAU, r(), r() * 10, 0.6 + r() * 0.8]); }
   // drops
@@ -427,13 +429,13 @@ export function createFaucet(ctx) {
         const R = 0.016 + 0.026 * f;
         crownGroup.children[0].scale.setScalar(R); crownGroup.children[1].scale.setScalar(R * 0.75);
         crownMats[0].alphaMap.rotation = time * 1.7; crownMats[1].alphaMap.rotation = -time * 2.3;
-                crownMats[0].opacity = 0.75 * smooth(0.1, 0.5, f); crownMats[1].opacity = 0.9 * smooth(0.1, 0.5, f);
+                crownMats[0].opacity = 0.6 * smooth(0.1, 0.5, f); crownMats[1].opacity = 0.8 * smooth(0.1, 0.5, f);
         const rb = r0 * Math.sqrt(v0 / Math.sqrt(v0 * v0 + 2 * 9.8 * fall));
         for (let i = 0; i < NLUMP; i++) {
           const s = lumpSeed[i], ph = time * 9 * s[3] + s[2], rr = rb * (1.2 + 2.2 * s[1]);
           const a = s[0] + time * 0.7;
           const sc = rb * (0.5 + 0.6 * (0.5 + 0.5 * Math.sin(ph))) * (0.5 + f);
-          _lp.set(Math.cos(a) * rr, 0.0006, Math.sin(a) * rr); _lq.identity(); _ls.set(sc * 1.4, sc * 0.6, sc * 1.4);
+          _lp.set(Math.cos(a) * rr, 0.0006, Math.sin(a) * rr); _lq.identity(); _ls.set(sc * 1.3, sc * 1.1, sc * 1.3);
           _lm.compose(_lp, _lq, _ls); lumps.setMatrixAt(i, _lm);
         }
         lumps.instanceMatrix.needsUpdate = true;
@@ -537,11 +539,11 @@ export function createBasin(ctx) {
         if (uWater > 0.5 && inner > 0.5 && wd > 0.0) {
           vec3 absorb = mix(vec3(5.0, 1.5, 1.1), vec3(60.0, 64.0, 70.0), uMurk);
           vec3 tr = exp(-absorb * (wd * 1.6 + 0.004));
-          vec2 cp = vLP.xz * 7.0;
+          vec2 cp = vLP.xz * 5.5;
           float c1 = texture2D(uCaus, cp + vec2(uTime * 0.031, uTime * 0.017)).r;
-          float c2 = texture2D(uCaus, cp * 1.31 + vec2(-uTime * 0.023, uTime * 0.029)).r;
-          float cs = (c1 * c2 * 1.3 + (c1 + c2) * 0.18) * (1.0 - uMurk) * smoothstep(0.0, 0.012, wd);
-          reflectedLight.directDiffuse *= tr * (0.8 + cs * 0.9);
+          float c2 = texture2D(uCaus, cp * 1.37 + vec2(0.37, 0.11) + vec2(-uTime * 0.023, uTime * 0.029)).r;
+          float cs = (c1 * c2 * 2.4 + (c1 + c2) * 0.22) * (1.0 - uMurk) * smoothstep(0.0, 0.012, wd);
+          reflectedLight.directDiffuse *= tr * (0.7 + cs);
           reflectedLight.indirectDiffuse *= tr * 0.92;
           reflectedLight.directSpecular *= tr * 0.25;
           reflectedLight.indirectSpecular *= tr * 0.3;
@@ -607,15 +609,17 @@ export function createBasin(ctx) {
     Object.assign(sh.uniforms, fU);
     sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute float aEdge; varying float vEdge;')
       .replace('#include <begin_vertex>', '#include <begin_vertex>\nvEdge = aEdge;');
-    const uvx = 'vec2 fuv = vec2(cos(uTime*0.03)*vMapUv.x - sin(uTime*0.03)*vMapUv.y, sin(uTime*0.03)*vMapUv.x + cos(uTime*0.03)*vMapUv.y) * 3.2 + vec2(uTime*0.004, uTime*0.003);';
+    const uvx = 'vec2 fuv = vec2(cos(uTime*0.03)*vMapUv.x - sin(uTime*0.03)*vMapUv.y, sin(uTime*0.03)*vMapUv.x + cos(uTime*0.03)*vMapUv.y) * 4.2 + vec2(uTime*0.004, uTime*0.003);';
     sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform float uTime, uFoam; varying float vEdge;')
       .replace('#include <map_fragment>', `${uvx}\n diffuseColor *= texture2D(map, fuv);`)
       .replace('#include <alphamap_fragment>', `
         float fa = texture2D(alphaMap, fuv).g;
         float fb = texture2D(alphaMap, fuv * 0.37 + 0.31).g;
         float dens = fa * 0.75 + fb * 0.35 + (1.0 - smoothstep(0.0, 0.035, vEdge)) * 0.25;
-        float T = mix(1.15, 0.22, uFoam);
-        diffuseColor.a *= smoothstep(T - 0.03, T + 0.05, dens) * smoothstep(0.0, 0.002, vEdge);`)
+        float T = mix(1.2, 0.3, uFoam);
+        float body = smoothstep(T - 0.02, T + 0.09, dens);
+        diffuseColor.rgb *= mix(0.62, 1.0, smoothstep(T + 0.02, T + 0.2, dens));
+        diffuseColor.a *= (smoothstep(T - 0.12, T + 0.02, dens) * 0.45 + body * 0.5) * smoothstep(0.0, 0.002, vEdge);`)
       .replace('#include <normal_fragment_maps>', `vec3 mapN = texture2D(normalMap, fuv).xyz * 2.0 - 1.0; mapN.xy *= normalScale; normal = normalize(tbn * mapN);`);
   };
   foamMat.customProgramCacheKey = () => 'wash-foam';
@@ -633,10 +637,10 @@ export function createBasin(ctx) {
   mats.push(ofMat);
   const overflowMesh = new THREE.Mesh(ofGeo, ofMat); overflowMesh.visible = false; overflowMesh.renderOrder = 2; body.add(overflowMesh);
   // wet ground (ring around the tub and puddle under the pour)
-  const wetMat = new THREE.MeshPhysicalMaterial({ color: 0x1c1a17, roughness: 0.12, transparent: true, opacity: 0, depthWrite: false, envMapIntensity: 1.2, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 });
+  const wetMat = new THREE.MeshPhysicalMaterial({ color: 0x1c1a17, roughness: 0.2, transparent: true, opacity: 0, depthWrite: false, envMapIntensity: 0.6, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 });
   mats.push(wetMat);
   const wetA = fbmField(128, 128, 5, 4, 4, 4);
-  const wetTex = mkTex(fieldToCanvas(wetA, 128, 128, (v, i) => { const x = (i % 128) / 64 - 1, y = Math.floor(i / 128) / 64 - 1, d = Math.hypot(x, y); const a = 255 * clamp((1 - d) * 2.2 + (v - 0.5) * 1.4, 0, 1); return [a, a, a]; }), false, false);
+  const wetTex = mkTex(fieldToCanvas(wetA, 128, 128, (v, i) => { const x = (i % 128) / 64 - 1, y = Math.floor(i / 128) / 64 - 1, d = Math.hypot(x, y); const a = 255 * clamp((0.75 - d) * 7 + (v - 0.5) * 4, 0, 1); return [a, a, a]; }), false, false);
   wetMat.alphaMap = wetTex;
   const ring = new THREE.Mesh(new THREE.RingGeometry(0.2, 0.36, 72, 1), wetMat.clone()); ring.rotation.x = -Math.PI / 2; ring.position.y = 0.0006; ring.visible = false; group.add(ring);
   ring.material.alphaMap = null; mats.push(ring.material);
@@ -653,8 +657,8 @@ export function createBasin(ctx) {
   const pourMat = waterMaterial({ color: 0x8090a0, opacity: 0.3, roughness: 0.05, env: 1.9, normalMap: pN, ns: 0.8, key: 'pour', side: THREE.DoubleSide });
   mats.push(pourMat);
   const pourMesh = new THREE.Mesh(pGeo, pourMat); pourMesh.visible = false; pourMesh.frustumCulled = false; pourMesh.renderOrder = 4; group.add(pourMesh);
-  const splashFoamMat = new THREE.MeshStandardMaterial({ color: 0xe0dfd8, map: ft.map, alphaMap: ft.alpha.clone(), transparent: true, depthWrite: false, roughness: 0.4, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
-  splashFoamMat.alphaMap.needsUpdate = true; splashFoamMat.alphaMap.center.set(0.5, 0.5); splashFoamMat.alphaMap.repeat.set(0.5, 0.5);
+  const splashFoamMat = new THREE.MeshStandardMaterial({ color: 0xe0dfd8, map: ft.map, alphaMap: ft.crown.clone(), transparent: true, depthWrite: false, roughness: 0.4, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
+  splashFoamMat.alphaMap.needsUpdate = true; splashFoamMat.alphaMap.center.set(0.5, 0.5);
   const splashFoam = new THREE.Mesh(new THREE.CircleGeometry(1, 32), splashFoamMat); splashFoam.rotation.x = -Math.PI / 2; splashFoam.position.y = 0.001; splashFoam.visible = false; splashFoam.renderOrder = 5; group.add(splashFoam);
   const dropMat = waterMaterial({ color: 0x9aaab2, opacity: 0.3, roughness: 0.04, env: 2.2, key: 'bdrop' }); mats.push(dropMat);
   const drops = new Drops(group, Math.round(220 * pscale), dropMat);
@@ -718,7 +722,7 @@ export function createBasin(ctx) {
     const cum = [0]; for (let i = 1; i < n; i++) cum.push(cum[i - 1] + pts[i].distanceTo(pts[i - 1]));
     const total = cum[n - 1];
     let seg = 0;
-    const W0 = 0.022 + 0.05 * rate, T0 = 0.005 + 0.008 * rate;
+    const W0 = 0.04 + 0.07 * rate, T0 = 0.003 + 0.005 * rate;
     for (let i = 0; i < PL; i++) {
       const L = (i / (PL - 1)) * total;
       while (seg < n - 2 && cum[seg + 1] < L) seg++;
@@ -727,8 +731,8 @@ export function createBasin(ctx) {
       _T.subVectors(pts[seg + 1], pts[seg]).normalize();
       _N.crossVectors(_T, _X).normalize();
       const t = L / total, over = smooth(0, 0.12, t);
-      const W = W0 * (1 - 0.45 * t) * (0.7 + 0.3 * over) * (1 + 0.06 * Math.sin(L * 60 - time * 18));
-      const Th = T0 * (0.5 + 0.9 * t) * (1 + 0.15 * Math.sin(L * 90 - time * 25));
+      const W = W0 * (1 - 0.55 * t) * (0.75 + 0.25 * over) * (1 + 0.06 * Math.sin(L * 60 - time * 18));
+      const Th = T0 * (0.6 + 1.6 * t) * (1 + 0.15 * Math.sin(L * 90 - time * 25));
       const wx = 0.002 * t * Math.sin(L * 25 - time * 9);
       for (let j = 0; j <= PR; j++) {
         const a = (j / PR) * TAU, k = (i * (PR + 1) + j);
@@ -775,18 +779,18 @@ export function createBasin(ctx) {
     const mk = Math.pow(murk, 0.65);
     tmpC.copy(cClear).lerp(cMurk, smooth(0, 0.6, murk));
     waterMat.color.copy(tmpC);
-    waterMat.opacity = lerp(0.2, 0.975, mk); waterMat.envMapIntensity = lerp(1.7, 0.7, murk);
+    waterMat.opacity = lerp(0.2, 0.975, mk); waterMat.envMapIntensity = lerp(1.7, 1.3, murk);
     waterMat.roughness = lerp(0.025, 0.14, murk);
-    waterMat.normalScale.setScalar((0.22 + agit * 0.5) * (1 - murk * 0.45));
+    waterMat.normalScale.setScalar((0.22 + agit * 0.5 + pour * 0.3) * (1 - murk * 0.3));
     water.visible = hasWater;
     foam.visible = hasWater && foamAmt > 0.01;
-    foamMat.color.setRGB(lerp(0.93, 0.6, murk * 0.8), lerp(0.93, 0.58, murk * 0.8), lerp(0.9, 0.53, murk * 0.8));
+    foamMat.color.setRGB(lerp(0.9, 0.5, murk), lerp(0.9, 0.48, murk), lerp(0.87, 0.43, murk));
     // pour
     const mcol = tmpC;
     if (pour > 0.01) {
       buildPour(); pourMesh.visible = true;
       pourMat.color.copy(mcol).lerp(new THREE.Color(0x8c9ca4), 1 - smooth(0, 0.6, murk));
-      pourMat.opacity = lerp(0.22, 0.9, mk) * (0.75 + 0.25 * pour);
+      pourMat.opacity = lerp(0.22, 0.93, mk) * (0.75 + 0.25 * pour); pourMat.envMapIntensity = lerp(1.9, 0.9, murk);
       pN.offset.y -= dt * 4.5;
       // splash
       splashAcc += dt * 70 * pour * pscale;
@@ -908,19 +912,23 @@ export function createBrush(ctx) {
   ft.normal.repeat.set(1, 1); mats.push(foamMat);
   const NF = low ? 60 : 110;
   const blobs = [];
-  for (let i = 0; i < NF; i++) {
-    const side = rnd();
-    let x, y, z;
-    if (side < 0.55) { x = (rnd() - 0.5) * 0.034; z = (rnd() - 0.5) * 0.054; y = rnd() * 0.012; }            // in/under the bristles
-    else if (side < 0.85) { const a = rnd() * TAU; x = Math.cos(a) * 0.019; z = Math.sin(a) * 0.03; y = 0.004 + rnd() * 0.015; } // around the tuft field
-    else { x = (rnd() - 0.5) * 0.036; z = (rnd() - 0.5) * 0.054; y = ROOT_Y + 0.0125 + rnd() * 0.002; if (Math.abs(x) < 0.012 && z > 0.01) z -= 0.03; } // on top of head
-    blobs.push({ x, y, z, r: 0.0014 + Math.pow(rnd(), 2) * 0.0042, th: rnd(), sq: 0.55 + rnd() * 0.35 });
+  const NCL = Math.round(NF / 7);
+  for (let c = 0; c < NCL; c++) {
+    const side = rnd(); let x, y, z;
+    if (side < 0.5) { x = (rnd() - 0.5) * 0.03; z = (rnd() - 0.5) * 0.05; y = rnd() * 0.01; }                    // among the bristle tips
+    else if (side < 0.85) { const a = rnd() * TAU; x = Math.cos(a) * 0.018; z = Math.sin(a) * 0.028; y = 0.003 + rnd() * 0.016; } // around the tuft field
+    else { x = (rnd() - 0.5) * 0.03; z = (rnd() - 0.5) * 0.04 - 0.005; y = ROOT_Y + 0.0122; }                  // on the head
+    const th = rnd(), big = 0.0016 + rnd() * 0.0022;
+    for (let k = 0; k < 7; k++) {
+      const rr = big * (k === 0 ? 1 : 0.25 + rnd() * 0.55), a = rnd() * TAU, d = k === 0 ? 0 : big * (0.8 + rnd() * 0.7);
+      blobs.push({ x: x + Math.cos(a) * d, y: y + (rnd() - 0.3) * big * 0.6, z: z + Math.sin(a) * d, r: rr, th: Math.min(0.99, th + k * 0.02), sq: 0.7 + rnd() * 0.3 });
+    }
   }
   blobs.sort((a, b) => a.th - b.th);
-  const foamI = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(1, 2), foamMat, NF); foamI.count = 0; group.add(foamI);
+  const foamI = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(1, 2), foamMat, blobs.length); foamI.count = 0; group.add(foamI);
   function layFoam(f) {
     let n = 0;
-    for (let i = 0; i < NF; i++) {
+    for (let i = 0; i < blobs.length; i++) {
       const b = blobs[i]; const vis = smooth(b.th * 0.92, b.th * 0.92 + 0.08, f); if (vis <= 0) continue;
       const r = b.r * vis * (0.6 + 0.4 * f);
       _q.identity(); _p.set(b.x, b.y, b.z); _s.set(r, r * b.sq, r); _m.compose(_p, _q, _s); foamI.setMatrixAt(n++, _m);

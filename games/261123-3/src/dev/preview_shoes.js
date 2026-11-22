@@ -11,8 +11,8 @@ const CAMS = {
   half: { cam: [0.02, 0.42, 0.22], look: [0.02, 0.03, 0], fov: 45 },
   side: { cam: [0.22, 0.12, 0.18], look: [0, 0.03, 0], fov: 40 },
   top: { cam: [0.0, 0.5, 0.001], look: [0, 0, 0], fov: 30 },
-  bag: { cam: [0.32, 0.42, 0.42], look: [0, 0.02, 0.03], fov: 45 },
-  baghang: { cam: [0.0, 0.78, 0.62], look: [0, 0.80, 0], fov: 45 },
+  bag: { cam: [0.30, 0.50, 0.55], look: [0.0, 0.02, 0.04], fov: 40 },
+  baghang: { cam: [0.05, 0.86, 0.75], look: [0.0, 0.80, 0], fov: 45 },
 };
 
 startPreview(({ THREE, scene, ctx }) => {
@@ -43,21 +43,21 @@ startPreview(({ THREE, scene, ctx }) => {
     const s = mk('R');
     bag.group.updateMatrixWorld(true);
     bag.mouth.add(s.group);
-    s.group.position.set(0.0, -0.002, -0.06);
-    s.group.rotation.set(0, 0, -Math.PI / 2 + 0.25);
+    // upright, heel out of the mouth; sole ~on the underside cloth
+    s.group.position.set(0.04, -bag.mouth.position.y + 0.004, -0.05);
   } else if (view === 'baghang') {
     bag = createBag(ctx); scene.add(bag.group);
-    bag.setPose('hanging'); bag.setFill(2); bag.setDusty(0); bag.setOpen(0.55);
+    bag.setPose('hanging'); bag.setFill(2); bag.setDusty(0); bag.setOpen(1);
     bag.group.position.set(-0.08, 0.98, 0);
     for (const [i, side] of [[0, 'L'], [1, 'R']]) {
       const s = mk(side); s.cleanAll(); s.setShine(0.6);
       bag.mouth.add(s.group);
-      s.group.position.set(i ? 0.03 : -0.03, 0.0, -0.08);
-      s.group.rotation.set(0, 0, (i ? 1 : -1) * 1.45);
+      // mouth frame: +Z out of the bag (up), local -Y = toward the bag front (+Z of the bag)
+      s.group.position.set(i ? 0.04 : -0.04, -0.024, -0.05);
     }
     const h = mk('R'); h.cleanAll(); h.setShine(0.6);
     h.group.position.set(0.12, 0.98, 0);
-    h.group.rotation.set(-Math.PI / 2, 0, 0); // heel up, toe down
+    h.group.rotation.set(-Math.PI / 2, 0, 0); h.group.rotateOnWorldAxis(new THREE.Vector3(0, 1, 0), -1.75); // heel up, toe down
     h.group.position.y = 0.98 - 0.095; // heel tab near the clip
     // clip marker lines
     const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.004, 0.004, 0.5, 8), new THREE.MeshStandardMaterial({ color: 0x8899aa, metalness: 0.6, roughness: 0.3 }));

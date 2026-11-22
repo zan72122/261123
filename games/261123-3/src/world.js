@@ -31,6 +31,19 @@ function addNoise(out, W, H, cx, cy, amp, rnd) {
     }
   }
 }
+// bilinear, tileable upsample of an n×n field to N×N
+function upsample(src, n, N) {
+  const out = new Float32Array(N * N), r = n / N, i0 = new Int32Array(N), i1 = new Int32Array(N), w = new Float32Array(N);
+  for (let x = 0; x < N; x++) { const f = x * r, i = Math.floor(f); i0[x] = i % n; i1[x] = (i + 1) % n; w[x] = f - i; }
+  for (let y = 0; y < N; y++) {
+    const ra = i0[y] * n, rb = i1[y] * n, t = w[y], o = y * N;
+    for (let x = 0; x < N; x++) {
+      const a = src[ra + i0[x]], b = src[ra + i1[x]], top = a + (b - a) * w[x];
+      out[o + x] = top + (src[rb + i0[x]] + (src[rb + i1[x]] - src[rb + i0[x]]) * w[x] - top) * t;
+    }
+  }
+  return out;
+}
 function heightToNormal(h, W, H, s, out) {
   const xr = new Int32Array(W), xl = new Int32Array(W);
   for (let x = 0; x < W; x++) { xr[x] = (x + 1) % W; xl[x] = (x - 1 + W) % W; }
@@ -87,10 +100,11 @@ function injectWPos(shader) {
 // ---------------------------------------------------------------- procedural textures
 function makeConcreteTex(N) {
   const rnd = makeRng(11), P = N * N;
-  const mot = new Float32Array(P), brm = new Float32Array(P), fine = new Float32Array(P);
-  addNoise(mot, N, N, 9, 9, 0.55, rnd); addNoise(mot, N, N, 31, 31, 0.3, rnd);
+  const n4 = N >> 2, motL = new Float32Array(n4 * n4), brm = new Float32Array(P), fine = new Float32Array(P);
+  addNoise(motL, n4, n4, 9, 9, 0.55, rnd); addNoise(motL, n4, n4, 31, 31, 0.3, rnd); addNoise(motL, n4, n4, 90, 90, 0.15, rnd);
+  const mot = upsample(motL, n4, N);
   addNoise(brm, N, N, 4, 360, 1.0, rnd);
-  addNoise(fine, N, N, 110, 110, 0.5, rnd); addNoise(fine, N, N, 260, 260, 0.8, rnd);
+  addNoise(fine, N, N, 260, 260, 1.0, rnd);
   const h = new Float32Array(P), pit = new Float32Array(P), wn = new Float32Array(P);
   const k = N / 1024;
   let s = 0x2545f491;
@@ -134,7 +148,7 @@ function makeMacroTex(M) {
   const T = L.TERRACE, out = new Uint8Array(P * 4);
   for (let py = 0; py < M; py++) for (let px = 0; px < M; px++) {
     const i = py * M + px, x = MACRO.x0 + (px + 0.5) / M * MACRO.size, z = MACRO.z0 + (py + 0.5) / M * MACRO.size;
-    let m = 1 + v[i] * 0.1;
+    let m = 1 + v[i] * 0.08;
     const wet = smooth(1.0, 0.3, Math.hypot(x * 0.9, z + 0.12) + v2[i] * 0.45);  // old splash marks around the washing spot
     m *= 1 - 0.06 * wet;
     m *= 1 - 0.1 * Math.exp(-(z - T.minZ) / 0.2) * (0.7 + 0.3 * v2[i]);          // grime at the wall foot
@@ -286,10 +300,10 @@ void main(){
   float az = dot(normalize(d.xz + 1e-5), sh) * 0.5 + 0.5;
   vec3 hor = mix(uAnti, uHor, az * az);
   float hp = max(h, 0.0);
-  vec3 col = mix(hor, uZen, 1.0 - exp(-hp * 4.5));
+  vec3 col = mix(hor, uZen, 1.0 - exp(-hp * 7.5));
   col = mix(col, hor * 1.06, exp(-hp * 22.0) * 0.5);
   float sdp = max(sd, 0.0);
-  col += uGlow * (pow(sdp, 8.0) * 0.16 + pow(sdp, 48.0) * 0.5 + pow(sdp, 700.0) * 2.5) * (0.5 + 0.5 * exp(-hp * 5.0));
+  col += uGlow * (pow(sdp, 6.0) * 0.22 * exp(-hp * 7.0) + pow(sdp, 48.0) * 0.45 * (0.4 + 0.6 * exp(-hp * 5.0)) + pow(sdp, 700.0) * 2.5);
   if (h < 0.0) col = mix(hor * 0.85, uGround, smoothstep(0.0, -0.2, h));
   float cl = 0.0;
   if (h > 0.0) {
@@ -315,7 +329,7 @@ void main(){
     float mdisc = smoothstep(0.99974, 0.99981, md);
     float mt = texture2D(uNoise, (d.xz - m.xz) * 25.0).b;
     col = mix(col, vec3(1.0, 0.96, 0.86) * (0.75 + 0.4 * mt) * 1.4, mdisc * uMoon * (1.0 - cl * 0.7));
-    col += vec3(0.5, 0.6, 0.85) * (pow(max(md, 0.0), 400.0) * 0.35 + pow(max(md, 0.0), 30.0) * 0.06) * uMoon;
+    col += vec3(0.5, 0.6, 0.85) * (pow(max(md, 0.0), 900.0) * 0.35 + pow(max(md, 0.0), 150.0) * 0.05) * uMoon;
   }
   gl_FragColor = vec4(col * uGain, 1.0);
   #include <tonemapping_fragment>
@@ -331,7 +345,7 @@ const RAW_KEYS = [
   { t: 0.30, sun: V(0.95, 0.21, 0.22), light: V(0.95, 0.22, 0.22), lc: 0xffc78a, li: 2.4, hs: 0xc4c8e0, hg: 0x8a7258, hi: 0.32, exp: 0.86, env: 0.42,
     zen: 0x2056bc, hor: 0xf6d8a6, anti: 0x86a6d8, glow: 0xffa048, sunc: 0xffd8a0, cLit: 0xffe4c0, cShade: 0x9c9cae, ground: 0x3e4530, gain: 1.2, disc: 26, stars: 0, moon: 0, cover: 0.6, fog: 0xd8c8b0 },
   { t: 0.45, sun: V(0.99, 0.08, 0.10), light: V(0.99, 0.08, 0.10), lc: 0xff8a4c, li: 1.6, hs: 0xb894b4, hg: 0x6e5446, hi: 0.36, exp: 0.95, env: 0.3,
-    zen: 0x34509a, hor: 0xff9658, anti: 0xd09cb6, glow: 0xff7a34, sunc: 0xffa060, cLit: 0xffa676, cShade: 0x8c6a86, ground: 0x30302a, gain: 1.15, disc: 18, stars: 0, moon: 0, cover: 0.6, fog: 0xc89a8a },
+    zen: 0x5c5aa4, hor: 0xff9a64, anti: 0xd09cb6, glow: 0xff7a34, sunc: 0xffa060, cLit: 0xffa676, cShade: 0x8c6a86, ground: 0x30302a, gain: 1.15, disc: 18, stars: 0, moon: 0, cover: 0.6, fog: 0xc89a8a },
   { t: 0.52, sun: V(0.98, -0.12, 0.12), light: V(0.6, 0.6, 0.45), lc: 0x9c84c0, li: 0.3, hs: 0x6a70aa, hg: 0x3a3640, hi: 0.45, exp: 1.05, env: 0.18,
     zen: 0x1c2a66, hor: 0xd2867a, anti: 0x5c5c94, glow: 0xff6a4c, sunc: 0x000000, cLit: 0xb87890, cShade: 0x4a4468, ground: 0x1c1c22, gain: 1.0, disc: 0, stars: 0.25, moon: 0.4, cover: 0.62, fog: 0x6a6088 },
   { t: 0.60, sun: V(0.2, -0.95, 0.2), light: V(-0.25, 0.85, 0.45), lc: 0xa8bff4, li: 0.6, hs: 0x5a74ba, hg: 0x2a3040, hi: 0.55, exp: 1.25, env: 0.15,
@@ -339,7 +353,7 @@ const RAW_KEYS = [
   { t: 0.74, sun: V(-0.97, -0.15, 0.18), light: V(-0.6, 0.6, 0.35), lc: 0x8e9cd8, li: 0.38, hs: 0x6a70b0, hg: 0x3a3644, hi: 0.45, exp: 1.1, env: 0.16,
     zen: 0x15225c, hor: 0x8c6a9a, anti: 0x2c3c76, glow: 0x80506c, sunc: 0x000000, cLit: 0x8a78a8, cShade: 0x343a68, ground: 0x14141c, gain: 1.0, disc: 0, stars: 0.5, moon: 0.5, cover: 0.62, fog: 0x4a4a78 },
   { t: 0.82, sun: V(-0.98, 0.03, 0.2), light: V(-0.95, 0.13, 0.25), lc: 0xffa48e, li: 1.15, hs: 0xd4a6be, hg: 0x6e5a56, hi: 0.4, exp: 0.95, env: 0.3,
-    zen: 0x3a5aac, hor: 0xffb8a0, anti: 0x9aaad8, glow: 0xffa088, sunc: 0xffc0a0, cLit: 0xffcac4, cShade: 0x9a90b2, ground: 0x2a2a28, gain: 1.15, disc: 14, stars: 0, moon: 0.15, cover: 0.6, fog: 0xd8b4b4 },
+    zen: 0x4a62b2, hor: 0xffb8a0, anti: 0xc0a8cc, glow: 0xffa088, sunc: 0xffc0a0, cLit: 0xffcac4, cShade: 0x9a90b2, ground: 0x2a2a28, gain: 1.15, disc: 14, stars: 0, moon: 0.15, cover: 0.6, fog: 0xd8b4b4 },
   { t: 1.00, sun: MORNING_DIR, light: MORNING_DIR, lc: 0xfff6ec, li: 2.6, hs: 0xc4dcff, hg: 0x8a8274, hi: 0.32, exp: 0.82, env: 0.5,
     zen: 0x1550c8, hor: 0xd4e6f8, anti: 0x4f86e0, glow: 0xfff4e4, sunc: 0xfff6ea, cLit: 0xffffff, cShade: 0xb4c2da, ground: 0x4a5a3a, gain: 1.25, disc: 30, stars: 0, moon: 0, cover: 0.6, fog: 0xc4d6ea },
 ];
@@ -356,10 +370,8 @@ export function createWorld(ctx) {
   const group = new THREE.Group(); group.name = 'world';
   const T = L.TERRACE;
   const uTime = { value: 0 };
-  const __t = [[ "start", performance.now()]]; const __mark = (n) => __t.push([n, performance.now()]);
   const noiseTex = makeNoiseTex(256);
 
-  __mark("concrete terrace");
   // --- concrete terrace
   const conc = makeConcreteTex(low ? 512 : 1024);
   const macro = makeMacroTex(256);
@@ -395,7 +407,6 @@ export function createWorld(ctx) {
     const m = new THREE.Mesh(geo, concMat); m.receiveShadow = true; m.name = 'terrace'; group.add(m);
   }
 
-  __mark("lawn");
   // --- lawn
   const grassTex = makeGrassTex(512);
   const HEDGE = { px: 6.3, pz: 5.95, nx: -4.9, hx: 1.25 }; // inner (garden-facing) faces of the three hedges
@@ -420,7 +431,6 @@ export function createWorld(ctx) {
     const m = new THREE.Mesh(geo, lawnMat); m.receiveShadow = true; m.name = 'lawn'; group.add(m);
   }
 
-  __mark("grass tufts (instanced)");
   // --- grass tufts (instanced)
   let grass;
   {
@@ -484,7 +494,6 @@ export function createWorld(ctx) {
     group.add(grass);
   }
 
-  __mark("house wall");
   // --- house wall
   {
     const sid = makeSidingTex(512, 256);
@@ -500,7 +509,7 @@ export function createWorld(ctx) {
     const m = new THREE.Mesh(geo, mat); m.receiveShadow = true; m.name = 'houseWall'; group.add(m);
     // foundation band (mortar grey)
     const fgeo = worldUV(new THREE.BoxGeometry(x1 - x0, 0.36, 0.06).translate((x0 + x1) / 2, 0.12, z - 0.005), 1.5, 0.37, 0.21);
-    const fmat = new THREE.MeshStandardMaterial({ map: conc.map, normalMap: conc.normalMap, roughnessMap: conc.roughnessMap, color: 0xd2cec6, roughness: 1, metalness: 0 });
+    const fmat = new THREE.MeshStandardMaterial({ map: conc.map, normalMap: conc.normalMap, roughnessMap: conc.roughnessMap, color: 0xcacbcc, roughness: 1, metalness: 0, normalScale: new THREE.Vector2(0.4, 0.4) });
     const fm = new THREE.Mesh(fgeo, fmat); fm.receiveShadow = true; group.add(fm);
     // fixtures: flashing, window frame, downspout (one merged mesh, vertex coloured)
     const keep = ['position', 'normal', 'color'];
@@ -523,7 +532,6 @@ export function createWorld(ctx) {
     group.add(glass);
   }
 
-  __mark("hedges: dark core boxes + instanced alpha-tested leaf cards");
   // --- hedges: dark core boxes + instanced alpha-tested leaf cards
   {
     const leaf = makeLeafTex(512);
@@ -574,7 +582,6 @@ export function createWorld(ctx) {
     im.name = 'hedgeLeaves'; im.computeBoundingSphere(); group.add(im);
   }
 
-  __mark("distant tree crowns (soft, out of focus) + neighbour houses");
   // --- distant tree crowns (soft, out of focus) + neighbour houses
   {
     const crownTex = makeCrownTex(512);
@@ -599,26 +606,26 @@ export function createWorld(ctx) {
 
     const keep = ['position', 'normal', 'color'];
     const walls = [], roofs = [];
-    const house = (cx, cz, w, d, h, ridge, wallCol, roofCol) => {
-      walls.push(stripTo(vcolor(new THREE.BoxGeometry(w, h, d).translate(cx, h / 2, cz), wallCol), keep));
-      for (let k = 0; k < 2; k++) walls.push(stripTo(vcolor(new THREE.BoxGeometry(0.05, 1.0, 1.4).translate(cx - w / 2 - 0.02, k ? h * 0.72 : h * 0.3, cz - d * 0.2 + k * d * 0.25), 0x4a525a), keep));
-      const ov = 0.45, hw = w / 2 + ov, x0 = cx - hw, x1 = cx + hw, z0 = cz - d / 2 - ov, z1 = cz + d / 2 + ov, y0 = h - 0.15, y1 = h + ridge;
-      const pos = [x0, y0, z0, cx, y1, z0, cx, y1, z1, x0, y0, z0, cx, y1, z1, x0, y0, z1, x1, y0, z0, x1, y0, z1, cx, y1, z1, x1, y0, z0, cx, y1, z1, cx, y1, z0,
-        x0, y0, z0, x0, y0, z1, x0, y0 - 0.12, z1, x0, y0, z0, x0, y0 - 0.12, z1, x0, y0 - 0.12, z0];
+    const house = (px, pz, rot, w, d, h, ridge, wallCol, roofCol) => {
+      const place = (g) => g.rotateY(rot).translate(px, 0, pz);
+      walls.push(place(stripTo(vcolor(new THREE.BoxGeometry(w, h, d).translate(0, h / 2, 0), wallCol), keep)));
+      for (let k = 0; k < 2; k++) walls.push(place(stripTo(vcolor(new THREE.BoxGeometry(0.05, 1.0, 1.5).translate(-w / 2 - 0.02, k ? h * 0.7 : h * 0.28, -d * 0.2 + k * d * 0.3), 0x4a525a), keep)));
+      const ov = 0.5, x0 = -w / 2 - ov, x1 = w / 2 + ov, z0 = -d / 2 - ov, z1 = d / 2 + ov, y0 = h - 0.2, y1 = h + ridge, f = 0.14;
+      const pos = [x0, y0, z0, 0, y1, z0, 0, y1, z1, x0, y0, z0, 0, y1, z1, x0, y0, z1, x1, y0, z0, x1, y0, z1, 0, y1, z1, x1, y0, z0, 0, y1, z1, 0, y1, z0,
+        x0, y0, z0, x0, y0, z1, x0, y0 - f, z1, x0, y0, z0, x0, y0 - f, z1, x0, y0 - f, z0, x1, y0, z0, x1, y0 - f, z1, x1, y0, z1, x1, y0, z0, x1, y0 - f, z0, x1, y0 - f, z1];
       const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.computeVertexNormals();
-      roofs.push(vcolor(g, roofCol));
-      const gab = new THREE.BufferGeometry(); gab.setAttribute('position', new THREE.Float32BufferAttribute([cx - w / 2, h, cz - d / 2, cx + w / 2, h, cz - d / 2, cx, y1 - 0.1, cz - d / 2, cx + w / 2, h, cz + d / 2, cx - w / 2, h, cz + d / 2, cx, y1 - 0.1, cz + d / 2], 3));
-      gab.computeVertexNormals(); walls.push(vcolor(gab, wallCol));
+      roofs.push(place(vcolor(g, roofCol)));
+      const gab = new THREE.BufferGeometry(); gab.setAttribute('position', new THREE.Float32BufferAttribute([-w / 2, h, -d / 2, w / 2, h, -d / 2, 0, y1 - 0.1, -d / 2, w / 2, h, d / 2, -w / 2, h, d / 2, 0, y1 - 0.1, d / 2], 3));
+      gab.computeVertexNormals(); walls.push(place(vcolor(gab, wallCol)));
     };
-    house(30, -11, 8, 7, 5.6, 1.6, 0xd6cfc0, 0x4c535b);
-    house(33, 13, 8, 7, 5.2, 1.4, 0xc9ced0, 0x6a5a50);
-    house(-14, -1, 7, 8, 5.4, 1.5, 0xd3cbbd, 0x4c535b);
+    house(30, -11, Math.PI / 2, 8, 7, 5.6, 2.3, 0xd6cfc0, 0x4c535b);
+    house(33, 13, 0, 8, 7, 5.2, 2.2, 0xc9ced0, 0x6a5a50);
+    house(-14, -1, 0, 7, 8, 5.4, 2.2, 0xd3cbbd, 0x4c535b);
     const hm = new THREE.Mesh(mergeGeometries(walls), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9, metalness: 0 }));
     const rm = new THREE.Mesh(mergeGeometries(roofs), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85, metalness: 0, side: THREE.DoubleSide }));
     hm.name = 'neighbourHouses'; rm.name = 'neighbourRoofs'; group.add(hm, rm);
   }
 
-  __mark("sky dome");
   // --- sky dome
   const skyU = {
     uZen: { value: new THREE.Color() }, uHor: { value: new THREE.Color() }, uAnti: { value: new THREE.Color() }, uGlow: { value: new THREE.Color() },
@@ -633,7 +640,6 @@ export function createWorld(ctx) {
   group.add(sky);
   scene.fog = new THREE.Fog(0xbcd0e2, 10, 110);
 
-  __mark("lights");
   // --- lights
   const sun = new THREE.DirectionalLight(0xfff1dc, 2.7);
   sun.castShadow = true;
@@ -658,7 +664,6 @@ export function createWorld(ctx) {
     sun.target.updateMatrixWorld();
   }
 
-  __mark("time of day");
   // --- time of day
   let tod = 0;
   const sSky = new THREE.Vector3();
@@ -700,7 +705,7 @@ export function createWorld(ctx) {
     const d = skyU.uDrift.value; d.x = (d.x + dt * 0.0011) % 1; d.y = (d.y + dt * 0.0005) % 1;
   }
 
-  __mark("end"); setTimeOfDay(0);
+  setTimeOfDay(0);
   if (low) setQuality(true);
 
   return {
@@ -712,6 +717,6 @@ export function createWorld(ctx) {
     setQuality,
     sunDir,
     sun, hemi,
-    update, _t: __t,
+    update,
   };
 }

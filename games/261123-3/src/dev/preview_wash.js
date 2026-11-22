@@ -9,7 +9,7 @@ const CAMS = {
   clear: { cam: [0.02, 0.62, 0.33], look: [0.02, 0.05, 0.0] },
   murk: { cam: [0.02, 0.62, 0.33], look: [0.02, 0.05, 0.0] },
   tilt: { cam: [0.1, 0.9, 1.3], look: [0, 0.05, 0.2] },
-  tools: { cam: [0.62, 0.42, 0.5], look: [0.33, 0.03, 0.03], fov: 35 },
+  tools: { cam: [0.4, 0.36, 0.42], look: [0.37, 0.03, 0.05], fov: 40 },
   drip: { cam: [0.1, 0.62, 0.35], look: [0, 0.4, -0.16] },
   overflow: { cam: [0.2, 0.55, 0.75], look: [0, 0.06, 0] },
 };
@@ -34,8 +34,8 @@ startPreview(({ THREE, scene, ctx }) => {
     for (const x of [-0.052, 0.052]) { const s = mkShoe(); s.position.set(x, basin.FLOOR_Y + level * 0.105, 0.02); s.rotation.z = x * 0.6; basin.content.add(s); shoes.push(s); }
   }
   if (view === 'tools') {
-    const s = mkShoe(); s.position.set(0.28, 0.025, 0.12); s.rotation.y = 0.5; scene.add(s);
-    brush.group.position.set(0.27, 0.05, 0.1); brush.group.rotation.set(0.15, 0.6, 0.35); scene.add(brush.group);
+    const s = mkShoe(); s.position.set(0.36, 0.025, 0.14); s.rotation.y = 1.35; scene.add(s);
+    brush.group.position.set(0.36, 0.05, 0.14); brush.group.rotation.set(0, 0.5, 0); scene.add(brush.group);
     brush.setFoam(0.6);
   }
   basin.setWater(level, murk, foam); basin.setTilt(tilt); basin.setPour(pour); basin.setOverflow(over);
