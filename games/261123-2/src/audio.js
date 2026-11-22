@@ -255,12 +255,12 @@ export function create(G) {
     // rustle
     const r = B.rustle.lvl;
     swWob += (rand(0.75, 1.2) - swWob) * Math.min(1, dt * 12);
-    setP(rus.swG.gain, 0.5 * r * swWob, now, 0.02);
+    setP(rus.swG.gain, 0.7 * r * swWob, now, 0.02);
     if (r > 0.02) {
       if (rgT < now + 0.01) rgT = now + 0.01;
       const p = rus.crG.gain, fp = rus.crF.frequency;
       while (rgT < now + 0.08) {
-        const d = rand(0.005, 0.03), pk = Math.max(1e-4, 1.4 * r * rand(0.3, 1.1));
+        const d = rand(0.005, 0.03), pk = Math.max(1e-4, 1.0 * r * rand(0.3, 1.1));
         fp.setValueAtTime(rand(3200, 4200 + 2800 * r), rgT);
         p.setValueAtTime(1e-4, rgT);
         p.linearRampToValueAtTime(pk, rgT + 0.004);
@@ -277,7 +277,7 @@ export function create(G) {
     if (f > 0.02) {
       if (crT < now) crT = now + expGap(2 + 16 * f);
       while (crT < now + 0.06) {
-        const amp = 0.12 * Math.pow(f, 0.6) * rand(0.35, 1);
+        const amp = 0.065 * Math.pow(f, 0.6) * rand(0.35, 1);
         if (Math.random() < 0.05) snap(crT, amp * 1.5); else crackle(crT, amp);
         crT += expGap(2 + 16 * f);
       }
@@ -374,7 +374,7 @@ export function create(G) {
       const v = voice(sfxV, 24); if (!v) return;
       frac = clamp(num(frac, 0), 0, 1);
       const step = clamp(Math.round(frac * 10) + Math.round(rand(-1, 1)), 0, 10), f = pent(step);
-      const t = T(), pk = 0.1 - 0.035 * frac;
+      const t = T(), pk = 0.17 - 0.06 * frac;
       ping(v, t, f, pk, 0.2, musBus);
       ping(v, t, f * 4, pk * 0.12, 0.05, musBus);
     },
@@ -390,7 +390,7 @@ export function create(G) {
       const s = clamp(num(seconds, 2.5), 0.6, 10), t = T();
       const bp = filt(v, 'bandpass', 300, 0.9), f = bp.frequency;
       f.setValueAtTime(300, t); f.exponentialRampToValueAtTime(900, t + 0.45 * s); f.exponentialRampToValueAtTime(400, t + s);
-      const g = gain(v, 0), p = g.gain, P = 1.4;
+      const g = gain(v, 0), p = g.gain, P = 0.8;
       p.setValueAtTime(0, t); p.linearRampToValueAtTime(P, t + 0.45 * s);
       p.linearRampToValueAtTime(P * 0.6, t + 0.75 * s); p.exponentialRampToValueAtTime(P * 0.001, t + s);
       p.linearRampToValueAtTime(0, t + s + 0.02);
@@ -442,7 +442,7 @@ export function create(G) {
     tok() {
       if (!live() || !gate('tok', 0.05)) return;
       const v = sfx(); if (!v) return; const t = T(), f = rand(700, 900);
-      ping(v, t, f, 0.28, 0.07, sfxBus);
+      ping(v, t, f, 0.45, 0.07, sfxBus);
       ping(v, t, f * 2.7, 0.06, 0.025, sfxBus);
       tick(v, t, f, 20, 0.05, 0.03, sfxBus);
       tick(v, t, 4500, 1, 0.04, 0.006, sfxBus);
@@ -470,8 +470,8 @@ export function create(G) {
       const v = sfx(); if (!v) return; const t = T();
       const lp = filt(v, 'lowpass', 2500, 1);
       lp.frequency.setValueAtTime(2500, t); lp.frequency.exponentialRampToValueAtTime(300, t + 0.3);
-      link(noise(v, WHITE, t, t + 0.5), lp, env(v, t, 0.08, 0.09 * lpn(1000), 0.35), sfxBus);
-      link(noise(v, BROWN, t, t + 0.5), filt(v, 'lowpass', 500, 0.7), env(v, t, 0.07, 0.4, 0.3), sfxBus);
+      link(noise(v, WHITE, t, t + 0.5), lp, env(v, t, 0.08, 0.065 * lpn(1000), 0.35), sfxBus);
+      link(noise(v, BROWN, t, t + 0.5), filt(v, 'lowpass', 500, 0.7), env(v, t, 0.07, 0.3, 0.3), sfxBus);
     },
     fan(k) {
       if (!live() || !gate('fan', 0.06)) return;
@@ -502,8 +502,8 @@ export function create(G) {
     tongs() {
       if (!live() || !gate('tongs', 0.06)) return;
       const v = sfx(); if (!v) return; const t = T(), r = rand(0.97, 1.03);
-      ping(v, t, 2100 * r, 0.07, 0.12, sfxBus);
-      ping(v, t, 3400 * r, 0.045, 0.1, sfxBus);
+      ping(v, t, 2100 * r, 0.1, 0.12, sfxBus);
+      ping(v, t, 3400 * r, 0.065, 0.1, sfxBus);
       tick(v, t, 5000, 2, 0.03, 0.006, sfxBus);
     },
     crackOpen() {
