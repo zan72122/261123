@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import { ease } from './timeline.js';
 import { makeHandTexture, makeRingTexture } from './hand.js';
 
-const GHOST_PX = 90;     // apparent height of the hand sprite in CSS px
+const GHOST_PX = 104;    // sprite height in CSS px (the visible hand is ~90 px; the wrist fades out)
 const GHOST_OPACITY = 0.55;
 const BURST_PERIOD = 2.5, BURST_LEN = 0.8;
 const GLINT_PERIOD = 2.5;
@@ -215,9 +215,10 @@ export function createHint(ctx, vp, guard) {
       lightK = Math.min(1, lightK + dt / 0.5);
       if (pos) {
         camera.getWorldPosition(_cam);
-        _v.copy(_cam).sub(pos); _v.y = 0; if (_v.lengthSq() < 1e-6) _v.set(0, 0, 1); _v.normalize();
-        const hgt = 1.5;
-        spot.position.copy(pos).addScaledVector(_v, 0.35); spot.position.y += hgt;
+        // from above, leaning toward the camera so the lit side is the side we see (also in side views)
+        _v.copy(_cam).sub(pos); if (_v.lengthSq() < 1e-6) _v.set(0, 0, 1); _v.normalize().multiplyScalar(0.75);
+        _v.y += 0.9; _v.normalize();
+        spot.position.copy(pos).addScaledVector(_v, 1.5);
         spot.target.position.copy(pos);
         spot.target.updateMatrixWorld();
         const d = spot.position.distanceTo(pos);
@@ -225,7 +226,7 @@ export function createHint(ctx, vp, guard) {
         spot.angle = Math.min(0.6, Math.max(0.04, Math.atan(r / d)));
         spot.penumbra = 0.9;
         const pulse = 0.5 + 0.5 * Math.sin(t * Math.PI * 2 / 1.8);
-        const base = level === 0 ? 0.55 + 0.3 * pulse : 0.85 + 0.45 * pulse;
+        const base = level === 0 ? 0.7 + 0.4 * pulse : 1.1 + 0.6 * pulse;
         spot.intensity = base * d * d * lightK; // ~constant illuminance on the target
       } else spot.intensity = 0;
 

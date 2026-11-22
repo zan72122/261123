@@ -13,39 +13,40 @@ startPreview(({ THREE, scene, ctx, camera }) => {
   let tick = () => {};
 
   if (view === 'water') {
-    fx.wetPatch(V(-0.16, 0, 0.12), 0.07, { life: 1e4 });
-    fx.wetPatch(V(0.18, 0, -0.1), 0.05, { life: 1e4, dark: 0.35 });
-    fx.wetPatch(V(0.05, 0, 0.22), 0.04, { life: 1e4 });
+    fx.wetPatch(V(-0.07, 0, 0.12), 0.06, { life: 1e4 });
+    fx.wetPatch(V(0.08, 0, -0.16), 0.045, { life: 1e4, dark: 0.35 });
+    fx.wetPatch(V(0.06, 0, 0.22), 0.035, { life: 1e4 });
     let ts = 0, td = 0;
     tick = (dt, t) => {
       ts -= dt; td -= dt;
       if (ts <= 0) {
         ts = 0.45;
-        fx.splash(V(-0.1, 0.02, -0.02), { count: 14 });
-        fx.splash(V(0.12, 0.02, 0.05), { count: 12, color: 0x3b342c, speed: 1.3 });
+        fx.splash(V(-0.05, 0.0, -0.08), { count: 14 });
+        fx.splash(V(0.05, 0.0, 0.06), { count: 12, color: 0x3b342c, speed: 1.3 });
       }
-      fx.spray(V(-0.3, 0.25, -0.15), V(1, 0.5, 0.25), { count: 2 });
-      if (td <= 0) { td = 0.3; fx.drip(V(0.02, 0.32, 0.14), { onLand: (p) => fx.wetPatch(p, 0.012, { life: 20 }) }); }
+      fx.spray(V(-0.16, 0.2, -0.25), V(0.6, 0.5, 0.6), { count: 2 });
+      if (td <= 0) { td = 0.3; fx.drip(V(-0.06, 0.3, 0.2), { onLand: (p) => fx.wetPatch(p, 0.012, { life: 20 }) }); }
       fx.update(dt);
     };
   } else if (view === 'foam') {
     const box = new THREE.Mesh(new RoundedBoxGeometry(0.16, 0.07, 0.09, 4, 0.02), white);
-    box.position.set(-0.1, 0.035, 0.0); box.rotation.y = 0.3; box.castShadow = box.receiveShadow = true; scene.add(box);
-    const water = new THREE.Mesh(new THREE.CircleGeometry(0.13, 48), new THREE.MeshStandardMaterial({ color: 0x15161a, roughness: 0.06 }));
-    water.rotation.x = -Math.PI / 2; water.position.set(0.12, 0.02, 0.06); water.receiveShadow = true; scene.add(water);
+    box.position.set(0, 0.035, -0.11); box.rotation.y = 0.2; box.castShadow = box.receiveShadow = true; scene.add(box);
+    const water = new THREE.Mesh(new THREE.CircleGeometry(0.1, 48), new THREE.MeshStandardMaterial({ color: 0x15161a, roughness: 0.06 }));
+    water.rotation.x = -Math.PI / 2; water.position.set(0, 0.02, 0.1); water.receiveShadow = true; scene.add(water);
     box.updateMatrixWorld(); water.updateMatrixWorld();
-    for (let i = 0; i < 80; i++) { // top + upper sides of the box, clustered
-      const u = (Math.random() - 0.5) * 0.15, w = (Math.random() - 0.5) * 0.08;
-      const top = Math.random() < 0.7;
-      const p = top ? V(u, 0.035, w) : V(u, 0.035 - Math.random() * 0.03, Math.sign(w) * 0.045);
+    const cl = [[-0.045, 0.01], [0.02, -0.015], [0.05, 0.02]];
+    for (let i = 0; i < 80; i++) { // lather patches on top of the box + a few on the front side
+      const c = cl[i % 3], a = Math.random() * 6.28, rr = Math.sqrt(Math.random()) * 0.02;
+      const u = c[0] + Math.cos(a) * rr, w = Math.max(-0.04, Math.min(0.04, c[1] + Math.sin(a) * rr));
+      const p = i % 6 ? V(u, 0.035, w) : V(u, 0.03 - Math.random() * 0.025, 0.045);
       fx.foam.add(box, p, 0.8 + Math.random() * 0.6);
     }
     for (let i = 0; i < 70; i++) { // on the water, in two patches
-      const c = i % 2 ? [0.03, 0.02] : [-0.05, -0.03];
-      const a = Math.random() * 6.28, r = Math.sqrt(Math.random()) * 0.045;
+      const c = i % 2 ? [0.03, 0.02] : [-0.04, -0.03];
+      const a = Math.random() * 6.28, r = Math.sqrt(Math.random()) * 0.032;
       fx.foam.add(water, V(c[0] + Math.cos(a) * r, c[1] + Math.sin(a) * r, 0), 0.8 + Math.random() * 0.7);
     }
-    for (let i = 0; i < 12; i++) fx.bubble(V((Math.random() - 0.5) * 0.3, 0.1 + Math.random() * 0.1, (Math.random() - 0.5) * 0.2), { life: 1e4 });
+    for (let i = 0; i < 12; i++) fx.bubble(V((Math.random() - 0.5) * 0.2, 0.08 + Math.random() * 0.12, (Math.random() - 0.5) * 0.3), { life: 1e4 });
     tick = (dt) => fx.update(dt);
   } else if (view === 'dust') {
     let td = 0, tsd = 0;
@@ -64,6 +65,9 @@ startPreview(({ THREE, scene, ctx, camera }) => {
       if (ts <= 0) { ts = 0.12; fx.sparkle(V((Math.random() - 0.5) * 0.2, 0.08 + Math.random() * 0.01, (Math.random() - 0.5) * 0.1), { count: 1, spread: 0.005 }); }
       fx.update(dt);
     };
+  } else if (view === 'wet') {
+    for (let i = 0; i < 6; i++) fx.wetPatch(V(-0.08 + (i % 2) * 0.16, 0, -0.2 + Math.floor(i / 2) * 0.17), 0.06, { life: 1e4 });
+    tick = (dt) => fx.update(dt);
   } else if (view === 'stress') {
     const parent = new THREE.Object3D(); scene.add(parent);
     const p = V(0, 0.1, 0), nd = new THREE.Vector2(0, 0);

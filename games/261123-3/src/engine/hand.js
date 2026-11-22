@@ -82,7 +82,7 @@ export function makeHandTexture() {
   part('back', 30, 165, 115);
   // a few faint tendons / bones on the back of the hand
   g.save(); S.back(g); g.clip();
-  g.strokeStyle = 'rgba(255,245,236,0.22)'; g.lineWidth = 7; g.lineCap = 'round';
+  g.strokeStyle = 'rgba(255,245,236,0.10)'; g.lineWidth = 9; g.lineCap = 'round';
   for (const [x0, x1] of [[8, 22], [40, 46], [72, 68]]) { g.beginPath(); g.moveTo(x0, 150); g.quadraticCurveTo((x0 + x1) / 2 + 4, 200, x1, 245); g.stroke(); }
   g.restore();
   part('k3', 98, 160, 22);

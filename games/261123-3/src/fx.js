@@ -231,16 +231,19 @@ export function createFx(ctx) {
   const dropGeo = new THREE.SphereGeometry(1, 10, 7);
   const aOp = new THREE.InstancedBufferAttribute(new Float32Array(DROP_CAP), 1); aOp.setUsage(THREE.DynamicDrawUsage);
   dropGeo.setAttribute('aOp', aOp);
-  const dropMat = new THREE.MeshStandardMaterial({ color: 0x9aa6ae, roughness: 0.12, metalness: 0, transparent: true, depthWrite: false, premultipliedAlpha: true, envMapIntensity: 1.8 });
+  const dropMat = new THREE.MeshStandardMaterial({ color: 0x8c979e, roughness: 0.2, metalness: 0, transparent: true, depthWrite: false, premultipliedAlpha: true, envMapIntensity: 1.2 });
   dropMat.onBeforeCompile = (sh) => {
     sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute float aOp; varying float vOp;')
       .replace('#include <begin_vertex>', '#include <begin_vertex>\nvOp = aOp;');
     sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying float vOp;')
       .replace('#include <opaque_fragment>', `
+        // water bead: see-through core, dark refractive rim, sharp sun glint + sky reflection
         float frn = 1.0 - saturate(dot(normal, geometryViewDir));
-        frn = frn * frn;
-        float aa = clamp(mix(vOp, 1.0, frn * 0.9), 0.0, 1.0);
-        gl_FragColor = vec4(totalDiffuse * aa + totalSpecular * (0.6 + 0.4 * aa) * 1.6, aa);`)
+        float rim = smoothstep(0.45, 0.95, frn);
+        float aa = clamp(vOp + (1.0 - vOp) * rim * 0.75, 0.0, 1.0);
+        vec3 body = totalDiffuse * mix(0.9, 0.3, rim * (1.0 - vOp));
+        vec3 spc = reflectedLight.directSpecular * 2.0 + reflectedLight.indirectSpecular * 0.55;
+        gl_FragColor = vec4(body * aa + spc, min(1.0, aa + dot(spc, vec3(0.3))));`)
       .replace('#include <premultiplied_alpha_fragment>', '');
   };
   const drops = new THREE.InstancedMesh(dropGeo, dropMat, DROP_CAP);
@@ -257,7 +260,7 @@ export function createFx(ctx) {
     _c.set(color == null ? 0xffffff : color);
     dCol[i * 3] = _c.r; dCol[i * 3 + 1] = _c.g; dCol[i * 3 + 2] = _c.b;
     const lum = 0.3 * _c.r + 0.6 * _c.g + 0.1 * _c.b;
-    dOp[i] = 0.16 + 0.72 * clamp01(1 - lum * 1.6); // dirty water: less transparent
+    dOp[i] = 0.1 + 0.5 * clamp01(1 - lum * 2.5); // dirty water: less transparent
     return i;
   }
   const dropRadius = (size) => (0.002 + 0.0025 * rnd() * rnd()) * size;
@@ -319,6 +322,7 @@ export function createFx(ctx) {
         float ring = exp(-pow((rr-0.78)/max(vP.z,0.015), 2.0));
         float inner = exp(-pow((rr-0.55)/max(vP.z*1.6,0.02), 2.0))*0.35;
         float fill = vP.w * (1.0 - smoothstep(0.0, 0.8, rr));
+        if (vP.w > 0.0) { ring *= 0.25; inner = 0.0; }
         float a = (ring + inner + fill) * vP.x * (1.0 - smoothstep(0.92, 1.0, r));
         gl_FragColor = vec4(vC, a);
         #include <tonemapping_fragment>
@@ -355,7 +359,7 @@ export function createFx(ctx) {
     uniforms: { map: { value: makeWetTex() } },
     vertexShader: FLAT_VERT,
     fragmentShader: `uniform sampler2D map; varying vec4 vP; varying vec3 vC; varying vec2 vUv;
-      void main(){ vec2 cell = vec2(mod(vP.z, 2.0), floor(vP.z / 2.0));
+      void main(){ float vz = floor(vP.z + 0.5); vec2 cell = vec2(mod(vz, 2.0), floor(vz * 0.5 + 0.25));
         float h = texture2D(map, (vUv + cell) * 0.5).a;
         float t = vP.y * 0.8;                       // drying: threshold rises, patch shrinks irregularly
         float m = smoothstep(t, t + 0.28, h) * vP.x;
@@ -398,8 +402,8 @@ export function createFx(ctx) {
   let fStamp = 0, fLive = 0, fPtr = 0;
   const foamGeo = makeFoamClumpGeo();
   const foamMat = new THREE.MeshStandardMaterial({
-    color: 0xf2f0ea, roughness: 0.28, metalness: 0, vertexColors: true,
-    emissive: 0x4a4946, envMapIntensity: 1.1,
+    color: 0xf2f0ea, roughness: 0.16, metalness: 0, vertexColors: true,
+    emissive: 0x5a5955, envMapIntensity: 1.25,
   });
   const foamMesh = new THREE.InstancedMesh(foamGeo, foamMat, FOAM_STORE);
   foamMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
@@ -540,10 +544,10 @@ export function createFx(ctx) {
   const uSpin = new Float32Array(DUST_CAP), uVar = new Float32Array(DUST_CAP), uCol = new Float32Array(DUST_CAP * 3), uA = new Float32Array(DUST_CAP);
   const dustMat = new THREE.ShaderMaterial({
     transparent: true, depthWrite: false, toneMapped: true,
-    uniforms: { uSun: sunU, map: { value: makeDustTex() }, uLight: { value: new THREE.Vector3(0.95, 0.93, 0.9) } },
+    uniforms: { uSun: sunU, map: { value: makeDustTex() }, uLight: { value: new THREE.Vector3(1.32, 1.29, 1.24) } },
     vertexShader: BB_VERT,
     fragmentShader: `uniform sampler2D map; uniform vec3 uLight; varying vec4 vP; varying vec3 vC; varying vec2 vUv; varying vec2 vQ; varying vec2 vSun;
-      void main(){ vec2 cell = vec2(mod(vP.z, 2.0), floor(vP.z / 2.0));
+      void main(){ float vz = floor(vP.z + 0.5); vec2 cell = vec2(mod(vz, 2.0), floor(vz * 0.5 + 0.25));
         vec4 tx = texture2D(map, (vUv + cell) * 0.5);
         float lit = 0.68 + 0.42 * clamp(dot(vQ, vSun) * 0.7 + 0.45, 0.0, 1.0);
         vec3 col = vC * uLight * lit * (0.92 + 0.4 * (tx.r - 0.9));
@@ -567,7 +571,7 @@ export function createFx(ctx) {
       uPos[i * 3] = pos.x + (rnd() - 0.5) * 0.03 * size; uPos[i * 3 + 1] = Math.max(pos.y, 0) + r0 * 0.4; uPos[i * 3 + 2] = pos.z + (rnd() - 0.5) * 0.03 * size;
       uVel[i * 3] = _v.x * sp; uVel[i * 3 + 1] = _v.y * sp * 0.5 + 0.03; uVel[i * 3 + 2] = _v.z * sp;
       uR0[i] = r0; uAge[i] = 0; uLife[i] = life * (0.7 + 0.6 * rnd()); uRot[i] = rnd() * 2 * PI; uSpin[i] = (rnd() - 0.5) * 0.8;
-      uVar[i] = Math.floor(rnd() * 4); uA[i] = 0.45 + 0.3 * rnd();
+      uVar[i] = Math.floor(rnd() * 4); uA[i] = 0.6 + 0.3 * rnd();
       const t = 0.92 + 0.16 * rnd();
       uCol[i * 3] = _c.r * t; uCol[i * 3 + 1] = _c.g * t; uCol[i * 3 + 2] = _c.b * t;
     }
@@ -586,7 +590,7 @@ export function createFx(ctx) {
   sandMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
   sandMesh.setColorAt(0, _c.set(0xffffff)); sandMesh.instanceColor.setUsage(THREE.DynamicDrawUsage);
   sandMesh.frustumCulled = false; sandMesh.count = 0; sandMesh.name = 'fx-sand'; group.add(sandMesh);
-  const SAND_COLS = [0x9c8a6e, 0x7d6f5c, 0xb3a184, 0x6a5f52, 0x8f8576, 0xa89676, 0x5a5048];
+  const SAND_COLS = [0xb8a588, 0x9c8c74, 0xcdbd9e, 0x857868, 0xaea492, 0xc2ad8a, 0x6e645a];
   function sand(pos, dir, opts) {
     const o = opts || EMPTY;
     const n = Math.max(1, Math.round((o.count == null ? 30 : o.count) * emit));
@@ -678,10 +682,9 @@ export function createFx(ctx) {
       if (dPos[j + 1] <= dFloor[i] && dVel[j + 1] < 0) {
         dPool.alive[i] = 0;
         if (dDot[i]) {
-          const dirty = dOp[i] > 0.4;
-          _c.setRGB(dCol[j], dCol[j + 1], dCol[j + 2]);
-          if (!dirty) _c.setRGB(0.9, 0.93, 0.96);
-          spawnRing(dPos[j], dFloor[i] + 0.0015, dPos[j + 2], dR[i] * (dLand[i] ? 7 : 5.5), 0.22, 0.25, _c, dirty ? 0.5 : 0.55);
+          // tiny short-lived wet spot (dark fill + faint glint ring)
+          _c.setRGB(dCol[j] * 0.22, dCol[j + 1] * 0.22, dCol[j + 2] * 0.22);
+          spawnRing(dPos[j], dFloor[i] + 0.0015, dPos[j + 2], dR[i] * (dLand[i] ? 7 : 5.5), dLand[i] ? 0.5 : 0.3, 0.7, _c, 0.45);
         }
         if (dLand[i]) { const cb = dLand[i]; dLand[i] = null; try { cb(new THREE.Vector3(dPos[j], dFloor[i], dPos[j + 2])); } catch (e) { /* ignore */ } }
         continue;
@@ -760,7 +763,7 @@ export function createFx(ctx) {
       if (par && uniqPar.indexOf(par) < 0) { uniqPar.push(par); par.updateWorldMatrix(true, false); }
       _p.set(fLoc[i * 3], fLoc[i * 3 + 1], fLoc[i * 3 + 2]);
       _q.set(fQ[i * 4], fQ[i * 4 + 1], fQ[i * 4 + 2], fQ[i * 4 + 3]);
-      const sc = fScale[i] * k; _s.set(sc, sc * 0.82, sc);
+      const sc = fScale[i] * k; _s.set(sc, sc * 0.72, sc);
       _m.compose(_p, _q, _s);
       if (par) _m.premultiply(par.matrixWorld);
       const me = _m.elements; fWorld[i * 3] = me[12]; fWorld[i * 3 + 1] = me[13]; fWorld[i * 3 + 2] = me[14];
