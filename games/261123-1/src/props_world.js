@@ -88,7 +88,7 @@
   // Pine glulam face/edge: canvas X = along grain. 1024 x 512 = 0.75m x 0.375m
   var WOOD_LU = 0.75, WOOD_LV = 0.375, END_LU = 0.25, END_LV = 0.0625;
 
-  function genWoodFace(seed) {
+  function* genWoodFace(seed) {
     var W = 1024, H = 512, R = rng(seed);
     var ca = canvas(W, H), cd = canvas(W, H);
     var xa = ctx2d(ca), xd = ctx2d(cd);
@@ -118,6 +118,7 @@
     var li = 0;
     var jx = [0, 0], slopeF;
     for (y = 0; y < H; y++) {
+      if ((y & 15) === 15) yield;
       while (y >= lams[li].y0 + lams[li].h) li++;
       var L = lams[li], yl = y - L.y0;
       var tz = (yl / L.pitch) % 1, tri = Math.abs(tz * 2 - 1) * 2 - 1, off = L.amp * tri;
@@ -180,7 +181,7 @@
   }
 
   // End grain: 1024 x 256 = 0.25 x 0.0625 m
-  function genEndGrain(seed) {
+  function* genEndGrain(seed) {
     var W = 1024, H = 256, R = rng(seed);
     var ca = canvas(W, H), cd = canvas(W, H);
     var xa = ctx2d(ca), xd = ctx2d(cd);
@@ -199,6 +200,7 @@
     var col = new Int16Array(W), li = 0;
     for (x = 0; x < W; x++) { while (x >= lams[li].x0 + lams[li].w) li++; col[x] = li; }
     for (var y = 0; y < H; y++) {
+      if ((y & 15) === 15) yield;
       for (x = 0; x < W; x++) {
         var L = lams[col[x]], dx = x - L.cx, dy = y - L.cy;
         var dist = Math.sqrt(dx * dx + dy * dy);
@@ -222,7 +224,7 @@
 
   // Oak floor: 2048 (along plank) x 1024 (across) = 2.4m x 1.2m, 12 planks of 0.10m
   var FLOOR_LU = 2.4, FLOOR_LV = 1.2;
-  function genFloor(seed) {
+  function* genFloor(seed) {
     var W = 2048, H = 1024, ROWS = 12, R = rng(seed);
     var ca = canvas(W, H), cd = canvas(W, H);
     var xa = ctx2d(ca), xd = ctx2d(cd);
@@ -258,6 +260,7 @@
         segI[x] = bi; segX[x] = bd;
       }
       for (var y = RW.y0; y < RW.y0 + RW.h; y++) {
+        if ((y & 7) === 7) yield;
         var yl = y - RW.y0 + 0.5, ey = Math.min(yl, RW.h - yl);
         for (x = 0; x < W; x++) {
           var Jt = J[segI[x]], S = Jt.seg, xl = segX[x] + 0.5;
@@ -286,33 +289,37 @@
   }
 
   // Plaster wall: 512 periodic, 0.8m tile
-  function genPlaster() {
+  function* genPlaster() {
     var N = 512, R = rng(77);
     var ca = canvas(N, N), cd = canvas(N, N);
     var xa = ctx2d(ca), xd = ctx2d(cd);
     var A = xa.createImageData(N, N), D = xd.createImageData(N, N);
     var a = A.data, d = D.data;
-    for (var y = 0; y < N; y++) for (var x = 0; x < N; x++) {
+    for (var y = 0; y < N; y++) {
+      if ((y & 15) === 15) yield;
+      for (var x = 0; x < N; x++) {
       var lo = vnP(x * 4 / N, y * 4 / N, 4), mid = vnP(x * 24 / N + 0.3, y * 24 / N, 24), hi = vnP(x * 96 / N, y * 96 / N + 0.7, 96), vh = vnP(x * 200 / N, y * 200 / N, 200);
       var m = 1 + (lo - 0.5) * 0.035 + (mid - 0.5) * 0.02 + (R() - 0.5) * 0.012;
       var o = (y * N + x) * 4;
       a[o] = c255(222 * m); a[o + 1] = c255(217 * m); a[o + 2] = c255(208 * m); a[o + 3] = 255;
       var bump = 0.5 + (mid - 0.5) * 0.35 + (hi - 0.5) * 0.35 + (vh - 0.5) * 0.25;
       d[o] = c255(bump * 255); d[o + 1] = c255((0.88 + (hi - 0.5) * 0.06) * 255); d[o + 2] = 0; d[o + 3] = 255;
-    }
+    } }
     xa.putImageData(A, 0, 0); xd.putImageData(D, 0, 0);
     return { map: ca, data: cd };
   }
 
   // Felt mat top: 1024x1024 covering whole mat (1.30 x 1.10)
-  function genFelt() {
+  function* genFelt() {
     var N = 1024, R = rng(4242);
     var ca = canvas(N, N), cd = canvas(N, N);
     var xa = ctx2d(ca), xd = ctx2d(cd);
     var A = xa.createImageData(N, N), D = xd.createImageData(N, N);
     var a = A.data, d = D.data;
     var bx = 12, by = 14; // binding width in px (~15mm)
-    for (var y = 0; y < N; y++) for (var x = 0; x < N; x++) {
+    for (var y = 0; y < N; y++) {
+      if ((y & 15) === 15) yield;
+      for (var x = 0; x < N; x++) {
       var o = (y * N + x) * 4;
       var ex = Math.min(x, N - 1 - x), ey = Math.min(y, N - 1 - y);
       var inB = ex < bx || ey < by;
@@ -331,7 +338,7 @@
         d[o] = c255((0.62 + (wv - 0.95) * 0.8) * 255); d[o + 1] = 225;
       }
       d[o + 2] = 0; d[o + 3] = 255;
-    }
+    } }
     xa.putImageData(A, 0, 0); xd.putImageData(D, 0, 0);
     // fibres
     for (var i = 0; i < 3500; i++) {
@@ -635,16 +642,161 @@
     sc.traverse(function (o) { if (o.isMesh) { o.geometry.dispose(); var m = Array.isArray(o.material) ? o.material : [o.material]; m.forEach(function (x) { x.dispose(); }); } });
   }
 
+  // ------------------------------------------------------------------ progressive textures
+  // The big procedural surfaces (floor, wall, wood, felt) start as a flat swatch of their own
+  // average colour, so the first frame needs almost no work. The real pattern is painted in
+  // small time slices after the first frame (floor and wall first: they fill the opening shot)
+  // and swapped in place — materials and shaders stay the same, only the image changes.
+  var lazy = [], lazyR = null, pumpOn = false, pumpTimer = 0, allDone = false;
+  function swatch(rgb) {
+    var c = canvas(4, 4), x = c.getContext('2d');
+    x.fillStyle = 'rgb(' + rgb[0] + ',' + rgb[1] + ',' + rgb[2] + ')'; x.fillRect(0, 0, 4, 4);
+    return c;
+  }
+  function lazyPair(name, args, mapRgb, dataRgb, repeat) {
+    var job = { name: name, args: args, it: null, done: false, id: lazy.length,
+      map: texFrom(swatch(mapRgb), true, repeat), data: texFrom(swatch(dataRgb), false, repeat) };
+    lazy.push(job);
+    return job;
+  }
+  var GENS = { floor: genFloor, plaster: genPlaster, wood: genWoodFace, end: genEndGrain, felt: genFelt };
+  function swapImage(tex, cv) {
+    // new Source => the GPU texture is re-allocated at the new size
+    tex.dispose();
+    tex.source = new THREE.Source(cv);
+    tex.needsUpdate = true;
+    if (lazyR) { try { lazyR.initTexture(tex); } catch (e) { /* uploaded on first use instead */ } }
+  }
+  function finishJob(job, mapCv, dataCv) {
+    if (job.done) return;
+    job.done = true; job.it = null;
+    swapImage(job.map, mapCv); swapImage(job.data, dataCv);
+    checkAllDone();
+  }
+  function checkAllDone() {
+    if (allDone) return;
+    for (var j = 0; j < lazy.length; j++) if (!lazy[j].done) return;
+    allDone = true;
+    if (pumpTimer) { clearTimeout(pumpTimer); pumpTimer = 0; }
+    stopWorkers();
+    // evening light is needed only near the end; build it once the textures are in, between frames
+    setTimeout(function () { try { if (S && !S.envEve) P.envEve(); } catch (e) { /* built on demand instead */ } }, 200);
+  }
+  function stepJob(job, until) {
+    if (job.done) return true;
+    if (!job.it) job.it = GENS[job.name].apply(null, job.args);
+    for (;;) {
+      var r = job.it.next();
+      if (r.done) { finishJob(job, r.value.map, r.value.data); return true; }
+      if (until && performance.now() > until) return false;
+    }
+  }
+  // main-thread fallback: a few ms between frames, so drawing stays smooth
+  function pump() {
+    pumpTimer = 0;
+    var until = performance.now() + 8;
+    for (var i = 0; i < lazy.length; i++) {
+      if (lazy[i].done) continue;
+      if (!stepJob(lazy[i], until)) break;
+      if (performance.now() > until) break;
+    }
+    if (!allDone) pumpTimer = setTimeout(pump, 0);
+  }
+  function startPump() {
+    if (pumpOn || allDone) return;
+    pumpOn = true;
+    stopWorkers();
+    pumpTimer = setTimeout(pump, 0);
+  }
+
+  // ---- worker: the same generator code, painted on another core (OffscreenCanvas)
+  var workers = [], workerOk = false, workerWatch = 0;
+  function stopWorkers() {
+    if (workerWatch) { clearTimeout(workerWatch); workerWatch = 0; }
+    for (var i = 0; i < workers.length; i++) { try { workers[i].terminate(); } catch (e) { /* ignore */ } }
+    workers.length = 0;
+  }
+  function workerSource() {
+    var fns = [rng, vn, vnP, smooth, clamp, c255, genWoodFace, genEndGrain, genFloor, genPlaster, genFelt];
+    var src = "'use strict';\n";
+    for (var i = 0; i < fns.length; i++) src += fns[i].toString() + '\n';
+    src += 'var NT = new Float32Array(65536);\n(function () { var r = rng(9137); for (var i = 0; i < 65536; i++) NT[i] = r(); })();\n' +
+      'function canvas(w, h) { return new OffscreenCanvas(w, h); }\n' +
+      "function ctx2d(c) { return c.getContext('2d', { willReadFrequently: true }); }\n" +
+      'var GENS = { floor: genFloor, plaster: genPlaster, wood: genWoodFace, end: genEndGrain, felt: genFelt };\n' +
+      'function grab(c) { return c.getContext("2d", { willReadFrequently: true }).getImageData(0, 0, c.width, c.height).data.buffer; }\n' +
+      'self.onmessage = function (e) {\n' +
+      '  var q = e.data;\n' +
+      '  try {\n' +
+      "    if (typeof OffscreenCanvas === 'undefined' || !new OffscreenCanvas(1, 1).getContext('2d')) throw new Error('no OffscreenCanvas');\n" +
+      '    var it = GENS[q.name].apply(null, q.args), r;\n' +
+      '    do { r = it.next(); } while (!r.done);\n' +
+      '    var m = grab(r.value.map), d = grab(r.value.data);\n' +
+      '    self.postMessage({ id: q.id, w: r.value.map.width, h: r.value.map.height, map: m, data: d }, [m, d]);\n' +
+      '  } catch (err) { self.postMessage({ id: q.id, fail: String(err && err.message || err) }); }\n' +
+      '};\n';
+    return src;
+  }
+  function toCanvas(buf, w, h) {
+    var c = canvas(w, h);
+    ctx2d(c).putImageData(new ImageData(new Uint8ClampedArray(buf), w, h), 0, 0);
+    return c;
+  }
+  function startWorkers() {
+    if (typeof Worker === 'undefined' || typeof OffscreenCanvas === 'undefined' || typeof Blob === 'undefined' || !window.URL) return false;
+    try {
+      var url = URL.createObjectURL(new Blob([workerSource()], { type: 'text/javascript' }));
+      // two lanes: the floor alone (largest, fills the opening shot), everything else on the other
+      var lanes = [[lazy[0]], lazy.slice(1)];
+      for (var l = 0; l < lanes.length; l++) {
+        var w = new Worker(url);
+        w.onmessage = function (e) {
+          var q = e.data, job = lazy[q.id];
+          if (!job) return;
+          if (q.fail) { startPump(); return; }
+          workerOk = true;
+          try { finishJob(job, toCanvas(q.map, q.w, q.h), toCanvas(q.data, q.w, q.h)); } catch (err) { startPump(); }
+        };
+        w.onerror = function (ev) { if (ev && ev.preventDefault) ev.preventDefault(); startPump(); };
+        workers.push(w);
+        for (var k = 0; k < lanes[l].length; k++) w.postMessage({ id: lanes[l][k].id, name: lanes[l][k].name, args: lanes[l][k].args });
+      }
+      setTimeout(function () { try { URL.revokeObjectURL(url); } catch (e) { /* ignore */ } }, 10000);
+      return true;
+    } catch (e) {
+      stopWorkers();
+      return false;
+    }
+  }
+
+  // called by the game once the first frame is on screen
+  P.loadRest = function () {
+    if (allDone || pumpOn) return;
+    if (!workers.length) { startPump(); return; }
+    // the workers should deliver well within a few seconds; if they stay silent, paint here instead
+    if (!workerWatch) workerWatch = setTimeout(function () { workerWatch = 0; if (!workerOk && !allDone) startPump(); }, 4000);
+  };
+  // finish everything now (e.g. before something needs the final look immediately)
+  P.finishAll = function () {
+    for (var i = 0; i < lazy.length; i++) stepJob(lazy[i], 0);
+  };
+
   P.init = function (renderer) {
     if (S) return { envMap: S.envDay };
     try { ANISO = Math.min(8, renderer.capabilities.getMaxAnisotropy() || 1); } catch (e) { ANISO = 1; }
     S = {};
-    var wf = genWoodFace(1234), we = genEndGrain(99), fl = genFloor(2024), pl = genPlaster(), fe = genFelt();
-    S.woodMap = texFrom(wf.map, true, true); S.woodData = texFrom(wf.data, false, true);
-    S.endMap = texFrom(we.map, true, true); S.endData = texFrom(we.data, false, true);
-    S.floorMap = texFrom(fl.map, true, true); S.floorData = texFrom(fl.data, false, true);
-    S.wallMap = texFrom(pl.map, true, true); S.wallData = texFrom(pl.data, false, true);
-    S.feltMap = texFrom(fe.map, true, false); S.feltData = texFrom(fe.data, false, false);
+    lazyR = renderer;
+    var jf = lazyPair('floor', [2024], [141, 113, 85], [154, 110, 0], true);
+    var jp = lazyPair('plaster', [], [221, 216, 207], [128, 224, 0], true);
+    var jw = lazyPair('wood', [1234], [219, 188, 140], [151, 162, 0], true);
+    var je = lazyPair('end', [99], [181, 137, 88], [134, 195, 0], true);
+    var jt = lazyPair('felt', [], [104, 107, 109], [129, 243, 0], false);
+    startWorkers();
+    S.woodMap = jw.map; S.woodData = jw.data;
+    S.endMap = je.map; S.endData = je.data;
+    S.floorMap = jf.map; S.floorData = jf.data;
+    S.wallMap = jp.map; S.wallData = jp.data;
+    S.feltMap = jt.map; S.feltData = jt.data;
     var hd = genHoleDecal();
     S.holeMap = texFrom(hd.map, true, false); S.holeNormal = texFrom(hd.normal, false, false);
     S.grooveMap = texFrom(genGrooveDecal(), true, false);
@@ -662,11 +814,21 @@
     S.screwGeo = buildScrewGeo();
 
     var pm = new THREE.PMREMGenerator(renderer);
-    var e0 = buildEnvScene(false), e1 = buildEnvScene(true);
+    var e0 = buildEnvScene(false);
     S.envDay = pm.fromScene(e0, 0.03).texture;
-    S.envEve = pm.fromScene(e1, 0.03).texture;
-    pm.dispose(); disposeScene(e0); disposeScene(e1);
+    pm.dispose(); disposeScene(e0);
+    S.envEve = null;   // evening light is only needed near the end: built in the background (or on demand)
     return { envMap: S.envDay };
+  };
+  P.envEve = function () {
+    ensure();
+    if (!S.envEve) {
+      var pm = new THREE.PMREMGenerator(lazyR);
+      var e1 = buildEnvScene(true);
+      S.envEve = pm.fromScene(e1, 0.03).texture;
+      pm.dispose(); disposeScene(e1);
+    }
+    return S.envEve;
   };
 
   // ------------------------------------------------------------------ lights
@@ -716,7 +878,7 @@
       // environment: cross over at k=0.5 with matched brightness
       var useEve = k >= 0.5, f;
       if (!useEve) f = 1 - 0.55 * (k / 0.5); else f = 1.35 - 0.35 * ((k - 0.5) / 0.5);
-      scene.environment = useEve ? S.envEve : S.envDay;
+      scene.environment = useEve ? P.envEve() : S.envDay;
       scene.traverse(function (o) {
         if (!o.isMesh) return;
         var arr = Array.isArray(o.material) ? o.material : [o.material];

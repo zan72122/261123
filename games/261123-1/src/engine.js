@@ -1077,7 +1077,15 @@
         }
       }
     });
-    if (E.camera) safe(function () { r.compile(s, E.camera); });
+    if (!E.camera) return;
+    // parallel compile where the browser supports it, so warming never stalls a frame
+    var par = false;
+    try { par = !!(r.extensions && r.extensions.has('KHR_parallel_shader_compile')); } catch (e) { par = false; }
+    if (par && typeof r.compileAsync === 'function') {
+      safe(function () { var pr = r.compileAsync(s, E.camera); if (pr && pr.catch) pr.catch(report); });
+    } else {
+      safe(function () { r.compile(s, E.camera); });
+    }
   };
 
   // ---------------------------------------------------------------- loop

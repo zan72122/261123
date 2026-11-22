@@ -1746,7 +1746,14 @@
   }
 
   // ------------------------------------------------------------------ frame loop
+  // after the first frame is on screen: paint the remaining textures and warm shaders in the background
+  var framesSeen = 0;
+  function afterFirstFrame() {
+    try { if (P.loadRest) P.loadRest(); } catch (e) { report(e); }
+    setTimeout(function () { try { if (E.prewarm) E.prewarm(); } catch (e) { report(e); } }, 120);
+  }
   function onFrame(dt, t) {
+    if (framesSeen < 2 && ++framesSeen === 2) afterFirstFrame();
     fxUndo();
     // pointer events (processed here so poses are free of visual offsets)
     if (evq.length) {
@@ -1804,7 +1811,6 @@
       if (sun.shadow.map) { sun.shadow.map.dispose(); sun.shadow.map = null; }
       if (E.invalidateShadows) E.invalidateShadows();
     });
-    try { if (E.prewarm) E.prewarm(); } catch (e) { report(e); }
   }
 
   G.Game = {
