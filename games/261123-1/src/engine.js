@@ -669,7 +669,7 @@
     mesh.receiveShadow = true;
     var zeroM = new THREE.Matrix4().makeScale(0, 0, 0);
     var col = new THREE.Color();
-    var woods = [0xead2a8, 0xf0dcb8, 0xe4c79a, 0xf3e3c4, 0xdfc092];
+    var woods = [0xd8b178, 0xe3c38e, 0xcda166, 0xe9cfa0, 0xc4955a];
     var S = [];
     for (var i = 0; i < CAP; i++) {
       mesh.setMatrixAt(i, zeroM);

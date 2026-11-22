@@ -97,7 +97,7 @@
   var ST_POS = V(0.19, 0.006, -0.20);
   var FIN_POS = V(0.85, 0, -1.11);
   var MAT_Y = 0.006;
-  var DRILL_MAT = V(0.08, MAT_Y, 0.10), DRILL_MAT_YAW = 0.35;
+  var DRILL_MAT = V(0.06, MAT_Y, 0.10), DRILL_MAT_YAW = PI + 0.35;
   var DRILL_CORNER = V(-0.80, MAT_Y, 0.22), DRILL_CORNER_YAW = 0.4;
   var CHARGER_POS = V(0.17, MAT_Y, 0.30);        // GAME.md の (0.12,-0.48) から移動（本棚のすべる道をあける）
   var KIT_POS = V(0.10, 0, -1.219);
@@ -157,6 +157,9 @@
 
     W.haloF = P.makeHalo({ billboard: false }); scene.add(W.haloF); W.haloF.userData.setStrength(0);
     W.haloB = P.makeHalo({ billboard: true }); scene.add(W.haloB); W.haloB.userData.setStrength(0);
+    // 主役そのものを包むやわらかい光（物の色に関係なく「これ」と分かるように。手前に重ねて描く）
+    W.haloA = P.makeHalo({ billboard: true }); scene.add(W.haloA); W.haloA.userData.setStrength(0);
+    W.haloA.traverse(function (o) { if (o.material) { o.material.depthTest = false; o.renderOrder = 6; } });
     W.ghost = P.makeGhostHand(); scene.add(W.ghost); W.ghost.userData.setOpacity(0);
     W.led = P.makeLedSpot(); scene.add(W.led); W.led.userData.setStrength(0);
 
@@ -244,7 +247,7 @@
     var n = timers.length;
     for (var i = 0; i < n; i++) {
       var t = timers[i];
-      if (t.dead) continue;
+      if (!t || t.dead) continue;
       t.t -= dt;
       if (t.t <= 0) { t.dead = true; try { t.fn(); } catch (e) { report(e); } }
     }
@@ -266,7 +269,7 @@
     var n = anims.length;
     for (var i = 0; i < n; i++) {
       var a = anims[i];
-      if (a.dead) continue;
+      if (!a || a.dead) continue;
       a.el += dt;
       var k = clamp(a.el / a.dur, 0, 1);
       try { a.fn(k, a.ease(k)); } catch (e) { report(e); a.dead = true; }
@@ -369,12 +372,12 @@
     seatedNow: false, clutchOn: false, shavT: 0, weak: false, spinning: false, lastSeat: -1
   };
   var _dp = V(), _dq = Q(), _ds = { p: V(), q: Q() };
+  var drillDummy = null;
   function drillStandPose(point, yaw, op, oq) {
-    var d = W.drill;
-    _v4.copy(d.position); _q2.copy(d.quaternion);
-    P.poseDrillStanding(d, point, yaw);
-    op.copy(d.position); oq.copy(d.quaternion);
-    d.position.copy(_v4); d.quaternion.copy(_q2);
+    if (!drillDummy) { drillDummy = new THREE.Object3D(); drillDummy.userData = W.drill.userData; }
+    drillDummy.scale.copy(W.drill.scale);
+    P.poseDrillStanding(drillDummy, point, yaw);
+    op.copy(drillDummy.position); oq.copy(drillDummy.quaternion);
   }
   function curScrew() {
     var base = si() >= 4 ? 6 : 0;
@@ -450,12 +453,12 @@
   function bsz(id) { return W.books[id].userData.size; }
   function centerToOrigin(id, c, q, out) { return out.set(0, bsz(id).h / 2, 0).applyQuaternion(q).negate().add(c); }
   function bookOnFloor(id) { var m = bookSt[id].mode; return m === 'floor'; }
-  var _fc = V(), _eul = new THREE.Euler();
+  var _fc = V(), _eul = new THREE.Euler(), _fq1 = Q(), _fq2 = Q(), _fq3 = Q();
   function floorPose(id, op, oq) {
     var sl = floorSlotOf[id], z = bsz(id);
     if (sl.charAt(0) === 'b') {
       var b = BASE[+sl.charAt(1)];
-      qa(AY, PI / 2 + b.yaw, oq).multiply(qa(AZ, b.up * PI / 2, _q2));
+      qa(AY, PI / 2 + b.yaw, oq).multiply(qa(AZ, b.up * PI / 2, _fq1));
       _fc.set(b.x, z.t / 2, b.z);
       centerToOrigin(id, _fc, oq, op);
       return;
@@ -475,7 +478,7 @@
       cy = tS / 2 + z.t / 2 + 0.003;
       cx = tp.x + sg * 0.03;
     }
-    qa(AZ, alpha, oq).multiply(qa(AY, tp.yaw, _q2)).multiply(qa(AZ, PI / 2, _q1));
+    qa(AZ, alpha, oq).multiply(qa(AY, tp.yaw, _fq1)).multiply(qa(AZ, PI / 2, _fq2));
     _fc.set(cx, cy, tp.z);
     centerToOrigin(id, _fc, oq, op);
   }
@@ -488,9 +491,9 @@
     var sx = amp * f * Math.sin(1.25 * t - L * 0.38);
     var sz = amp * 0.6 * f * Math.sin(0.93 * t + 1.0 - L * 0.31);
     var yaw = 0.22 * Math.sin(L * 1.9 + 0.4) + PI / 2;
-    qa(AY, yaw, oq).multiply(qa(AZ, PI / 2, _q2));
-    _q1.setFromEuler(_eul.set(sz * 1.6, 0, -sx * 1.6));
-    oq.premultiply(_q1);
+    qa(AY, yaw, oq).multiply(qa(AZ, PI / 2, _fq1));
+    _fq2.setFromEuler(_eul.set(sz * 1.6, 0, -sx * 1.6));
+    oq.premultiply(_fq2);
     _fc.set(TOWER_C.x + 0.012 * Math.sin(L * 2.3) + sx, y + z.t / 2, TOWER_C.z + 0.010 * Math.cos(L * 1.7) + sz);
     centerToOrigin(id, _fc, oq, op);
   }
@@ -622,13 +625,13 @@
       var base = ix === 4 ? 6 : 0;
       for (s = base; s < base + 6; s++) {
         var n = Math.round(S.screws[s] * 7);
-        if (n > 0) { screwRootW(s, _v1); _v1.y += 0.004; E.particles.emit('shaving', _v1, { count: n, speed: 0.12, floorY: _v1.y - 0.004, dir: [0, 1, 0] }); }
+        if (n > 0) { screwRootW(s, _v1); _v1.y += 0.004; E.particles.emit('shaving', _v1, { count: n, scale: 1.7, speed: 0.12, floorY: _v1.y - 0.004, dir: [0, 1, 0] }); }
       }
     }
     // glows off
     for (var g = 0; g < glowables.length; g++) setGlowK(glowables[g], 0);
-    hintKey = ''; hintT = 0;
-    W.ghost.userData.setOpacity(0); W.haloF.userData.setStrength(0); W.haloB.userData.setStrength(0);
+    hintKey = ''; hintT = 0; boxShot = false; boxReady = false;
+    W.ghost.userData.setOpacity(0); W.haloF.userData.setStrength(0); W.haloB.userData.setStrength(0); W.haloA.userData.setStrength(0);
   }
 
   // ------------------------------------------------------------------ camera shots
@@ -636,43 +639,47 @@
     var c = curScrew();
     var top = si() >= 4 ? 4 : 2;
     out.set(-0.40, 0.47, -0.20);
-    if (c >= 0) { screwRootW(c, _v1); out.lerp(_v1, 0.3); }
+    if (c >= 0) { screwRootW(c, _v1); out.lerp(_v1, E.aspect() < 1 ? 0.62 : 0.3); }
     void top;
     return out;
   }
   var SHOTS = {
     tower: function (a) {
-      return a < 1 ? { target: [0.70, 0.19, -0.36], dir: [0.25, 0.5, 1], radius: 0.36 }
+      return a < 1 ? { target: [0.74, 0.20, -0.40], dir: [0.3, 0.45, 1], radius: 0.30 }
         : { target: [0.42, 0.16, -0.30], dir: [0.15, 0.5, 1], radius: 0.42 };
     },
     boards: function (a) {
-      return a < 1 ? { target: [-0.36, 0.06, -0.12], dir: [0.02, 1.3, 1], radius: 0.60 }
+      return a < 1 ? { target: [-0.34, 0.06, -0.14], dir: [0.02, 1.3, 1], radius: 0.54 }
         : { target: [-0.33, 0.06, -0.14], dir: [0.02, 1.15, 1], radius: 0.55 };
     },
     screws: function (a) {
       var f = screwFocus(V());
-      return a < 1 ? { target: [f.x, f.y + 0.05, f.z], dir: [0.95, 1.75, 0.45], radius: 0.30 }
-        : { target: [f.x, f.y + 0.05, f.z], dir: [0.05, 1.35, 1], radius: 0.30 };
+      return a < 1 ? { target: [f.x, f.y + 0.05, f.z], dir: [0.95, 1.75, 0.45], radius: 0.24 }
+        : { target: [f.x, f.y + 0.08, f.z + 0.02], dir: [0.05, 1.45, 1], radius: 0.34 };
     },
     battery: function (a) {
       return a < 1 ? { target: [-0.20, 0.30, 0.02], dir: [0.35, 1.5, 1], radius: 0.50 }
-        : { target: [-0.22, 0.28, 0.0], dir: [0.1, 1.2, 1], radius: 0.45 };
+        : { target: [-0.24, 0.30, 0.04], dir: [0.1, 1.6, 1], radius: 0.54 };
     },
     flip: function (a) {
       return a < 1 ? { target: [-0.40, 0.22, -0.18], dir: [0.12, 0.55, 1], radius: 0.48 }
         : { target: [-0.40, 0.22, -0.18], dir: [0.1, 0.5, 1], radius: 0.42 };
     },
     stand: function (a) {
-      return a < 1 ? { target: [-0.14, 0.34, -0.20], dir: [0.06, 0.32, 1], radius: 0.62 }
-        : { target: [-0.14, 0.34, -0.20], dir: [0.05, 0.3, 1], radius: 0.50 };
+      return a < 1 ? { target: [-0.19, 0.30, -0.20], dir: [0.06, 0.34, 1], radius: 0.70 }
+        : { target: [-0.19, 0.32, -0.20], dir: [0.05, 0.3, 1], radius: 0.52 };
     },
     books: function (a) {
-      return a < 1 ? { target: [0.90, 0.24, -0.42], dir: [0.0, 0.95, 1], radius: 0.70 }
-        : { target: [0.92, 0.26, -0.48], dir: [0.0, 0.8, 1], radius: 0.62 };
+      return a < 1 ? { target: [0.92, 0.22, -0.42], dir: [0.0, 0.95, 1], radius: 0.64 }
+        : { target: [0.92, 0.28, -0.46], dir: [0.0, 0.85, 1], radius: 0.86 };
     },
     lamp: function (a) {
       return a < 1 ? { target: [1.06, 0.34, -0.80], dir: [0.0, 0.6, 1], radius: 0.55 }
-        : { target: [1.06, 0.34, -0.80], dir: [0.0, 0.55, 1], radius: 0.48 };
+        : { target: [1.04, 0.44, -0.82], dir: [0.0, 0.5, 1], radius: 0.58 };
+    },
+    endBox: function (a) {
+      return a < 1 ? { target: [0.42, 0.34, -1.0], dir: [0.05, 0.45, 1], radius: 0.74 }
+        : { target: [0.45, 0.36, -1.0], dir: [0.05, 0.42, 1], radius: 0.56 };
     },
     end: function (a) {
       return a < 1 ? { target: [0.72, 0.40, -0.95], dir: [0.05, 0.42, 1], radius: 0.72 }
@@ -683,7 +690,7 @@
     if (st === 'screwsA' || st === 'screwsB') return S.battery === 'dead' ? SHOTS.battery : SHOTS.screws;
     return SHOTS[st] || SHOTS.boards;
   }
-  function goShot(dur) { E.setShot(shotFor(S.stage), dur === undefined ? 1.2 : dur); }
+  function goShot(dur, st) { E.setShot(shotFor(st || S.stage), dur === undefined ? 1.2 : dur); }
 
   // ------------------------------------------------------------------ glow / hint director
   var glowables = [];
@@ -695,6 +702,7 @@
     glowVal.set(o, k);
     o.userData.setGlow(k);
   }
+  var boxShot = false, boxReady = false;
   var hintKey = '', hintT = 0, hintNudgeT = 0, hintPinged = false, hintLevel = 0;
 
   function curHint() {
@@ -704,7 +712,7 @@
     if (ix === 0) {
       if (tower.falling) return null;
       for (i = 0; i < 8; i++) h.actors.push(W.books[i]);
-      h.gmul = 0.55; h.kind = 'tap';
+      h.gmul = 0.55; h.kind = 'tap'; h.ar = 0.34;
       h.from = V(TOWER_C.x, 0.2, TOWER_C.z); h.to = null;
       h.nudge = function () { tower.boost = Math.max(tower.boost, 0.012); };
       return h;
@@ -714,15 +722,15 @@
       if (S.boards < 3) {
         var j = 2 - S.boards, b = W.boards[j];
         h.key = 'boards' + S.boards;
-        h.actors = [b];
+        h.actors = [b]; h.ar = 0.26;
         h.from = wpos(b, V());
         _v1.copy(b.userData.home.pos); W.frame.localToWorld(_v1);
         h.to = _v1.clone();
-        h.halo = { pos: V(_v1.x, MAT_Y + 0.0205, -0.20), sx: 0.035, sz: 0.16, bill: false };
+        h.halo = { pos: V(_v1.x, MAT_Y + 0.0205, -0.20), sx: 0.05, sz: 0.2, bill: false };
         h.nudge = function () { addFx(b, 'hop', 0.025, 0.35); snd('tick', { vol: 0.25 }); };
       } else {
         h.key = 'boards3';
-        h.actors = [W.sideA];
+        h.actors = [W.sideA]; h.ar = 0.36;
         h.from = wpos(W.sideA, V());
         _v1.copy(W.sideA.userData.home.pos); W.frame.localToWorld(_v1);
         h.to = _v1.clone();
@@ -737,7 +745,7 @@
         var sp = spareBattery();
         if (!sp || carry) return null;
         h.key = 'battery';
-        h.actors = [sp];
+        h.actors = [sp]; h.ar = 0.10;
         h.from = wpos(sp, V()); h.from.y += 0.01;
         h.to = wpos(W.drill.userData.batterySlot, V());
         h.halo = { pos: h.to.clone(), sx: 0.07, sz: 0.07, bill: true };
@@ -747,20 +755,21 @@
       var c = curScrew();
       if (c < 0 || dr.mode !== 'rest' || press) return null;
       h.key = S.stage + c;
-      h.actors = [W.drill];
+      h.actors = [W.drill]; h.ar = 0.15;
+      h.gmul = 0.8;
       h.kind = 'hold';
       h.from = V().copy(W.drill.userData.bodyCenter); W.drill.localToWorld(h.from);
       screwHeadW(c, _v1);
       if (!dr.qcSet) { computeCarryYaw(); dr.qcSet = true; }
       h.to = fingerForTip(_v1, V());
       screwRootW(c, _v2);
-      h.halo = { pos: V(_v2.x, _v2.y + 0.001, _v2.z), sx: 0.03, sz: 0.03, bill: false };
+      h.halo = { pos: V(_v2.x, _v2.y + 0.001, _v2.z), sx: 0.055, sz: 0.055, bill: false };
       h.nudge = function () { addFx(W.screws[c], 'nod', 0.25, 0.5); addFx(W.drill, 'hop', 0.015, 0.3); };
       return h;
     }
     if (ix === 3) {
       if (flip.drag) return null;
-      h.actors = [W.sideA];
+      h.actors = [W.sideA]; h.ar = 0;
       h.from = V(-0.40, 0.40, -0.10);
       h.toScr = { dx: 0, dy: -0.5 };
       h.halo = { pos: V(-0.40, 0.468, -0.085), sx: 0.36, sz: 0.025, bill: false };
@@ -769,10 +778,10 @@
     }
     if (ix === 5) {
       if (stand.drag) return null;
-      h.actors = [W.sideB];
+      h.actors = [W.sideB]; h.ar = 0;
       h.from = V(-0.66, 0.40, -0.10);
       h.toScr = { dx: 0, dy: -0.45 };
-      h.halo = { pos: V(-0.74, 0.30, -0.08), sx: 0.12, sz: 0.12, bill: true };
+      h.halo = { pos: V(-0.74, 0.30, -0.06), sx: 0.17, sz: 0.17, bill: true };
       h.nudge = function () { rockFrame(0.07); };
       return h;
     }
@@ -781,7 +790,7 @@
       var id = chooseBook();
       if (id < 0) return null;
       h.key = 'books' + S.books.length + ':' + id;
-      h.actors = [W.books[id]];
+      h.actors = [W.books[id]]; h.ar = 0.17;
       h.from = bookCenterW(id, V());
       h.to = nextSlotCenter(V()); h.to.y += 0.10;
       var sc = nextSlotCenter(V());
@@ -793,13 +802,13 @@
       if (carry) return null;
       if (!S.lampPlaced) {
         h.key = 'lamp0';
-        h.actors = [W.lamp];
+        h.actors = [W.lamp]; h.ar = 0.2;
         h.from = V(LAMP_FLOOR.x, 0.14, LAMP_FLOOR.z);
         h.to = V(LAMP_TOP.x, LAMP_TOP.y + 0.14, LAMP_TOP.z);
         h.halo = { pos: V(LAMP_TOP.x, LAMP_TOP.y + 0.002, LAMP_TOP.z), sx: 0.11, sz: 0.11, bill: false };
       } else {
         h.key = 'lamp1';
-        h.actors = [W.lamp]; h.kind = 'tap';
+        h.actors = [W.lamp]; h.kind = 'tap'; h.ar = 0.2;
         h.from = V(LAMP_TOP.x, LAMP_TOP.y + 0.16, LAMP_TOP.z);
       }
       h.nudge = function () { addFx(W.lamp, 'hop', 0.015, 0.3); };
@@ -807,7 +816,7 @@
     }
     if (ix === 8) {
       h.key = 'end';
-      h.actors = [W.box]; h.kind = 'tap';
+      h.actors = [W.box]; h.kind = 'tap'; h.ar = 0.36;
       h.from = V(KIT_POS.x, 0.16, KIT_POS.z + 0.05);
       h.delay = 12;
       h.nudge = function () { addFx(W.box, 'hop', 0.01, 0.3); };
@@ -822,7 +831,14 @@
     out.from = { x: f.x, y: f.y };
     out.to = null;
     if (h.to) { var t = proj(h.to); out.to = { x: t.x, y: t.y }; }
-    else if (h.toScr) out.to = { x: f.x + h.toScr.dx * minDim(), y: f.y + h.toScr.dy * minDim() };
+    else if (h.toScr) {
+      var L = Math.abs(h.toScr.dy) * minDim();
+      if (f.y - L > 12) out.to = { x: f.x, y: f.y - L };
+      else {
+        var sgn = f.x < vw() / 2 ? 1 : -1;
+        out.to = { x: clamp(f.x + sgn * L, 12, vw() - 12), y: Math.max(12, f.y - 0.3 * L) };
+      }
+    }
     out.kind = h.kind;
     return out;
   }
@@ -847,6 +863,7 @@
     if (h && h.delay) {
       age = idle - h.delay;
       if (age < 0) { actorSet = []; h = null; }
+      else if (!boxShot) { boxShot = true; E.setShot(SHOTS.endBox, 2.2); later(2.3, function () { boxReady = true; }); }
     }
     var t = E.time();
     var level = age >= 12 ? 3 : age >= 8 ? 2 : age >= 4 ? 1 : 0;
@@ -860,7 +877,7 @@
     }
     for (var i = 0; i < glowables.length; i++) {
       var o = glowables[i];
-      setGlowK(o, actorSet.indexOf(o) >= 0 ? k * (h ? h.gmul : 1) : 0);
+      setGlowK(o, actorSet.indexOf(o) >= 0 ? 0.6 * k * (h ? h.gmul : 1) : 0);
     }
     // charger LED pulse when the spare battery is the actor
     if (h && h.key === 'battery') W.charger.userData.setLed('green', 0.4 + 0.6 * k);
@@ -878,9 +895,15 @@
         hb.userData.setStrength(0);
       }
     } else { hf.userData.setStrength(0); hb.userData.setStrength(0); }
-    // nudge
-    if (h && level >= 1) {
-      if (!hintPinged) { hintPinged = true; snd('ping', { vol: 0.6 }); }
+    // 主役を包む光
+    var ha = W.haloA, ar = h ? (h.ar === undefined ? 0.16 : h.ar) : 0;
+    if (h && ar > 0 && h.from) {
+      var am = ar * (level >= 2 ? 1.25 : 1);
+      ha.position.copy(h.from); ha.scale.set(am, am, 1); ha.userData.setStrength(0.22 + 0.38 * k);
+    } else ha.userData.setStrength(0);
+    // nudge（1.5 秒で最初の小さな動き。音は 4 秒から）
+    if (h && level >= 1 && !hintPinged) { hintPinged = true; snd('ping', { vol: 0.6 }); }
+    if (h && age >= 1.5) {
       hintNudgeT -= dt;
       if (hintNudgeT <= 0) { hintNudgeT = 2; if (h.nudge) { try { h.nudge(); } catch (e) { report(e); } } }
     }
@@ -914,7 +937,8 @@
     gh.position.copy(_gw);
     camera.getWorldDirection(_v1);
     var depth = _v2.copy(_gw).sub(camera.position).dot(_v1);
-    var worldH = 0.15 * 2 * depth * Math.tan(camera.fov * PI / 360) * (vh() / Math.max(1, minDim())) * (minDim() / vh());
+    var px = Math.max(100, 0.26 * minDim());
+    var worldH = (px / vh()) * 2 * depth * Math.tan(camera.fov * PI / 360);
     gh.scale.setScalar(sc * worldH / 0.16);
     gh.userData.setOpacity(op);
   }
@@ -1264,11 +1288,11 @@
             if (dr.shavT <= 0 && spinning) {
               dr.shavT = 0.08;
               screwRootW(i2, _v3); _v3.y += 0.003;
-              E.particles.emit('shaving', _v3, { count: E.low ? 1 : 1 + (Math.random() < 0.5 ? 1 : 0), speed: 0.22, floorY: _v3.y - 0.003, dir: [0, 1, 0] });
+              E.particles.emit('shaving', _v3, { count: E.low ? 1 : 1 + (Math.random() < 0.5 ? 1 : 0), scale: 1.7, speed: 0.26, floorY: _v3.y - 0.003, dir: [0, 1, 0] });
             }
           } else if (dr.dying) { spinning = dr.power > 0.08; load = 0.5; }
           // battery dies: 9th screw past half, old battery
-          if (!dr.dying && S.battery === 'old' && si() === 4 && doneCount() >= 8 && S.screws[i2] > 0.5) startDying();
+          if (!dr.dying && S.battery === 'old' && si() === 4 && doneCount() >= 8 && S.screws[i2] > 0.5 && S.screws[i2] < 1) startDying();
           if (S.screws[i2] >= 1) {
             snd('seat', { vol: 1 });
             screwRootW(i2, _v3); _v3.y += 0.01;
@@ -1499,6 +1523,7 @@
   }
   function updStand(dt) {
     if (si() !== 5) return;
+    if (fr.phase === 'flat' && !busy) { fr.phase = 'stand'; fr.stand = 0; fr.nudge = 0; }
     if (stand.drag) fr.stand += (stand.target - fr.stand) * sm(dt, 0.15);
   }
   function standCommit(dur) {
@@ -1515,7 +1540,7 @@
       later(1.0, function () {
         fr.phase = 'slide'; fr.slide = 0;
         snd('scrape', { vol: 0.9 });
-        goShot(1.6);
+        goShot(1.6, 'books');
         anim(1.2, function (k, e) { fr.slide = e; }, function () {
           fr.phase = 'final'; fr.slide = 1;
           snd('knock', { vol: 0.5, pitch: 0.7 });
@@ -1775,6 +1800,7 @@
     state: S,
     cuePoint: function () {
       if (!curH || busy) return null;
+      if (curH.delay && !boxReady) return null;
       return cueScreen(curH, {});
     },
     isBusy: function () { return busy || !!carry || !!dr.dying || dr.mode === 'travel'; },
