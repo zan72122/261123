@@ -81,7 +81,7 @@ export function create(G) {
 
   // ---------------------------------------------------------------- leaf material (shared by loose + pile)
   const flipY = texLeaves.flipY !== false;
-  const leafUniforms = { uTransl: { value: 0.55 }, uGlow: { value: 0.10 } };
+  const leafUniforms = { uTransl: { value: 0.55 }, uGlow: { value: 0.05 } };
   const LEAF_VERT_PARS = `
 attribute float aCell; attribute vec3 aTint; attribute vec3 aCurl; attribute float aBurn;
 varying vec3 vTint; varying float vLB; varying vec2 vLuv;`;
@@ -161,7 +161,7 @@ reflectedLight.indirectDiffuse += diffuseColor.rgb * uGlow * vec3(1.0,0.8,0.55);
   const CELL_W = [0.17, 0.13, 0.13, 0.25, 0.19, 0.13];
   function pickCell() { let r = Math.random(); for (let k = 0; k < 6; k++) { r -= CELL_W[k]; if (r <= 0) return k; } return 3; }
   function makeTint(arr, o, cell) {
-    const b = 1 + rnd(-0.12, 0.12);
+    const b = 0.93 + rnd(-0.12, 0.12);
     const h = rnd(-0.06, 0.06);
     let r = b * (1 + h), g = b * (1 - h * 0.6), bl = b * (1 - h * 0.3);
     if (Math.random() < 0.18 || (cell === 3 && Math.random() < 0.3)) { const d = rnd(0.7, 0.92); r *= d * 0.95; g *= d * 0.8; bl *= d * 0.65; }
@@ -293,29 +293,34 @@ float bn1 = texture2D(uNoise, bp*1.1 + 0.17).r;
 float bn2 = texture2D(uNoise, bp*3.7 + 0.53).g;
 float bn3 = texture2D(uNoise, bp*9.0 + 0.31).b;
 float bChar = smoothstep(0.0, 0.16, uBurn*1.75 - 0.15 - (br*0.75 + bn1*0.45));
-float bAsh = smoothstep(0.0, 0.22, uBurn*2.3 - 1.05 - (br*0.55 + bn1*0.4) + 0.35);
+float bAsh = smoothstep(0.0, 0.25, uBurn*2.6 - 1.55 - (br*0.55 + bn1*0.4));
 vec3 bc = diffuseColor.rgb;
+{ float l0 = dot(bc, vec3(0.3,0.59,0.11)); bc = mix(vec3(l0), bc, 0.85) * 0.82;
+  bc *= mix(0.5, 1.0, smoothstep(1.0, 0.55, br)) * (0.85 + 0.3*bn1); }
 bc = mix(bc, bc*vec3(0.55,0.40,0.28), smoothstep(0.0, 0.55, uBurn)*0.7);
 vec3 charC = vec3(0.030,0.026,0.022)*(0.55 + 1.1*bn3);
 bc = mix(bc, charC, bChar);
-vec3 ashT = texture2D(uAsh, bp*1.4).rgb;
-vec3 ashC = ashT * vec3(0.95,0.93,0.90) * (0.85 + 0.3*bn2);
+vec3 ashT = mix(texture2D(uAsh, bp*3.1).rgb, texture2D(uAsh, mat2(0.6,-0.8,0.8,0.6)*bp*2.3 + 0.4).rgb, 0.5);
+vec3 ashC = ashT * vec3(0.84,0.75,0.64) * (0.8 + 0.3*bn2);
 float flake = smoothstep(0.64, 0.74, bn2) * (0.5 + 0.5*bn3);
 ashC = mix(ashC, charC*1.3, flake*0.9);
-ashC = mix(ashC, charC*2.0, smoothstep(0.7, 1.0, br)*0.35);
+ashC = mix(ashC, vec3(0.05,0.042,0.035)*(0.7+0.6*bn3), smoothstep(0.62, 0.98, br + (bn2-0.5)*0.4)*0.95);
+// ember mask: glowing coals show in dark cracks between the ash
+float en = texture2D(uNoise, bp*4.6 + vec2(uTime*0.011, -uTime*0.008)).r;
+float en2 = texture2D(uNoise, bp*11.0 - vec2(uTime*0.019, uTime*0.015)).g;
+float emM = smoothstep(0.68, 0.88, en*0.55 + en2*0.6) * (1.0 - 0.75*smoothstep(0.35, 0.9, br));
+emM *= max(bChar, bAsh) * (1.0 - 0.6*flake) * uEmber;
 bc = mix(bc, ashC, bAsh);
+bc = mix(bc, vec3(0.06,0.02,0.01), clamp(emM*1.3, 0.0, 0.85));
 diffuseColor.rgb = bc;`)
+      .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
+normal = normalize(mix(normal, nonPerturbedNormal, bAsh*0.5));`)
       .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
-roughnessFactor = mix(roughnessFactor, 0.98, max(bChar*0.6, bAsh));`)
+roughnessFactor = mix(roughnessFactor, 1.0, max(bChar*0.6, bAsh));`)
       .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
 {
-  float en = texture2D(uNoise, bp*2.3 + vec2(uTime*0.013, -uTime*0.009)).r;
-  float en2 = texture2D(uNoise, bp*5.1 - vec2(uTime*0.021, uTime*0.017)).g;
-  float m = smoothstep(0.5, 0.82, en*0.6 + en2*0.55) ;
-  float crack = 1.0 - smoothstep(0.35, 0.75, dot(ashT, vec3(0.33)));
-  m *= (0.35 + 0.65*crack) * max(bChar, bAsh) * (1.0 - 0.6*flake);
-  float br2 = 0.65 + 0.35*sin(uTime*1.4 + en2*9.0);
-  totalEmissiveRadiance += vec3(1.0, 0.30, 0.045) * m * br2 * uEmber * 3.2;
+  float br2 = 0.6 + 0.4*sin(uTime*1.3 + en2*9.0 + en*5.0);
+  totalEmissiveRadiance += vec3(1.0, 0.27, 0.035) * emM * br2 * 3.0;
 }`);
   };
   moundMat.customProgramCacheKey = () => 'leaves-mound-v1';
@@ -337,7 +342,7 @@ roughnessFactor = mix(roughnessFactor, 0.98, max(bChar*0.6, bAsh));`)
   const rimR = (th) => 1 + 0.05 * Math.sin(3 * th + ph1) + 0.03 * Math.sin(5 * th + ph2) + 0.015 * Math.sin(8 * th + ph3);
   function prof(t) {
     if (t >= 1) return 0;
-    const ex = lerp(2.2, 3.6, bkShape), pw = lerp(1.1, 0.75, bkShape);
+    const ex = lerp(1.7, 2.4, bkShape), pw = lerp(1.25, 1.7, bkShape);
     return Math.pow(1 - Math.pow(t, ex), pw);
   }
   const lump = (th, t) => 1 + (0.10 * Math.sin(2 * th + ph4 + t * 2.5) * t + 0.07 * Math.sin(4 * th + ph5 - t * 3) * t + 0.05 * Math.cos(t * 5 + ph6)) * (1 - 0.5 * bkShape);
@@ -384,7 +389,7 @@ roughnessFactor = mix(roughnessFactor, 0.98, max(bChar*0.6, bAsh));`)
     moundU.uR.value = curR;
   }
 
-  function slotBurn(i) { return clamp((burnK * 1.6 - 0.25 - sOrd[i] * 0.75) / 0.5, 0, 1); }
+  function slotBurn(i) { return clamp((burnK * 1.5 - 0.35 - sOrd[i] * 0.5) / 0.6, 0, 1); }
   function applyBurnAttrs() {
     const tA = pTintA.array, cA = pCurlA.array, bA = pBurnA.array;
     for (let i = 0; i < PCAP; i++) {
@@ -440,10 +445,10 @@ roughnessFactor = mix(roughnessFactor, 0.98, max(bChar*0.6, bAsh));`)
     else {
       sTh[i] = rnd(0, TAU);
       const u = Math.random();
-      sT[i] = u < 0.38 ? rnd(0.8, 1.07) : Math.sqrt(Math.random()) * 0.88;
+      sT[i] = u < 0.4 ? rnd(0.82, 1.12) : Math.sqrt(Math.random()) * 0.9;
     }
     sYaw[i] = rnd(0, TAU);
-    const tl = sT[i] > 0.95 ? 0.15 : 0.55;
+    const tl = sT[i] > 0.97 ? 0.12 : 0.5;
     sTx[i] = rnd(-tl, tl); sTz[i] = rnd(-tl, tl);
     if (Math.random() < 0.1) sTx[i] += PI;
     sOff[i] = rnd(0.003, 0.016);
@@ -495,7 +500,7 @@ roughnessFactor = mix(roughnessFactor, 0.98, max(bChar*0.6, bAsh));`)
   rakeMesh.position.copy(RAKE.tip).negate();
   rakeTilt.add(rakeMesh); rakeRoot.add(rakeTilt); scene.add(rakeRoot);
   const keyPts = RAKE.keys.map((p) => p.clone().sub(RAKE.tip));
-  const SWEEP_PITCH = 0.66;
+  const SWEEP_PITCH = 0.58;
   // lowest key point height for a given pitch/roll
   const _rq = new THREE.Quaternion(), _re = new THREE.Euler(0, 0, 0, 'XYZ'), _rv = new THREE.Vector3();
   function lowestY(pitch, roll) {
@@ -528,8 +533,8 @@ roughnessFactor = mix(roughnessFactor, 0.98, max(bChar*0.6, bAsh));`)
     hvx: 0, hvz: 0, inX: 0, inZ: 0, inVx: 0, inVz: 0, gotPoint: false,
   };
   function rakeRest() {
-    rk.x = 0.5; rk.z = 0.55; rk.vx = rk.vz = 0;
-    rk.yaw = Math.atan2(1, -0.28); rk.pitch = FLAT_PITCH; rk.pv = 0; rk.roll = 0.06; rk.rv = 0;
+    rk.x = 0.92; rk.z = 0.62; rk.vx = rk.vz = 0;
+    rk.yaw = Math.atan2(1, -0.45); rk.pitch = FLAT_PITCH; rk.pv = 0; rk.roll = 0.06; rk.rv = 0;
     rk.active = false; rk.fly = -1; rk.hs = 0;
   }
   rakeRest();
@@ -584,19 +589,19 @@ roughnessFactor = mix(roughnessFactor, 0.98, max(bChar*0.6, bAsh));`)
     n = clamp(n | 0, 0, LCAP);
     const nc = 7 + ((Math.random() * 4) | 0);
     clusters = [];
-    for (let c = 0; c < nc; c++) { const s = randomSpot(0.85); clusters.push({ x: s.x, z: s.z, s: rnd(0.12, 0.24), w: rnd(0.5, 1.5) }); }
+    for (let c = 0; c < nc; c++) { const s = randomSpot(0.85); clusters.push({ x: s.x, z: s.z, s: rnd(0.14, 0.28), w: rnd(0.5, 1.5) }); }
     let wsum = 0; for (const c of clusters) wsum += c.w;
     for (let i = 0; i < n; i++) {
       let x = 0, z = 0, ok = false;
       for (let tries = 0; tries < 14 && !ok; tries++) {
-        if (Math.random() < 0.7) {
+        if (Math.random() < 0.58) {
           let r = Math.random() * wsum, c = clusters[0];
           for (const cc of clusters) { r -= cc.w; if (r <= 0) { c = cc; break; } }
           x = c.x + gauss() * c.s; z = c.z + gauss() * c.s * 0.9;
         } else { const s = randomSpot(0.72); x = s.x; z = s.z; }
         ok = validSpot(x, z, 0.72);
         const r = Math.sqrt(x * x + z * z);
-        if (ok && r < 0.92 && Math.random() < 0.5) ok = false; // looser ring near the pile
+        if (ok && r < 0.9 && Math.random() < 0.3) ok = false; // looser ring near the pile
       }
       if (!ok) { const s = randomSpot(0.72); x = s.x; z = s.z; }
       initLeafLook(i);
@@ -605,9 +610,14 @@ roughnessFactor = mix(roughnessFactor, 0.98, max(bChar*0.6, bAsh));`)
     loose.count = LCAP;
     // acorns under clusters
     for (let k = 0; k < ACN; k++) {
-      const c = clusters[k % clusters.length];
-      let x = c.x + rnd(-0.05, 0.05), z = c.z + rnd(-0.05, 0.05);
-      if (!validSpot(x, z, 0.75)) { const s = randomSpot(0.8); x = s.x; z = s.z; }
+      // under a leaf cluster but clear of the stone ring (r >= 1.0)
+      let x = 0, z = 0, ok = false;
+      for (let t = 0; t < 30 && !ok; t++) {
+        const c = clusters[(k + t) % clusters.length];
+        x = c.x + gauss() * c.s * 0.6; z = c.z + gauss() * c.s * 0.6;
+        ok = validSpot(x, z, 1.0);
+      }
+      if (!ok) { const s = randomSpot(1.0); x = s.x; z = s.z; }
       placeAcorn(acorns[k], x, z);
     }
     acornsInPile = 0;

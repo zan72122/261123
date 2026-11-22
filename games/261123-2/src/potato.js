@@ -49,7 +49,7 @@ export function create(G) {
   }
   function nrm(t, s) { try { return t && G.util && G.util.normalFrom ? G.util.normalFrom(t, s) : null; } catch (e) { return null; } }
 
-  const skinTex = texRep('potato_skin', 2, 1), skinN = nrm(skinTex, 1.6);
+  const skinTex = texRep('potato_skin', 2, 1), skinN = nrm(skinTex, 3);
   const roastTex = texRep('potato_roast', 2, 1), roastN = nrm(roastTex, 3.5);
 
   // skin detail shared by raw + roasted skin: darker ends, longitudinal streaks, little root-eye scars
@@ -67,11 +67,13 @@ export function create(G) {
         vec2 g = vec2(su.x * 5.0, su.y * 11.0);
         vec2 cell = floor(g); vec2 fp = fract(g) - 0.5;
         float h = pHash(cell);
-        if (h > 0.72) {
+        if (h > 0.6) {
           vec2 o = vec2(pHash(cell + 3.1), pHash(cell + 7.7)) - 0.5;
-          vec2 d = (fp - o * 0.5) * vec2(1.0, 2.6);
-          float eye = 1.0 - smoothstep(0.05, 0.14, length(d));
-          diffuseColor.rgb *= 1.0 - 0.5 * eye;
+          vec2 d = (fp - o * 0.5) * vec2(0.7, 3.2);
+          float eye = 1.0 - smoothstep(0.06, 0.16, length(d));
+          float halo = (1.0 - smoothstep(0.12, 0.3, length(d))) * (1.0 - eye);
+          diffuseColor.rgb *= 1.0 - 0.55 * eye;
+          diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * vec3(1.25, 1.1, 1.05) + 0.02, halo * 0.35);
         }
       }
       #endif`);
@@ -87,35 +89,40 @@ export function create(G) {
     .replace('#include <common>', '#include <common>\nvarying vec3 vWN;\nvarying vec3 vOP;')
     .replace('#include <beginnormal_vertex>', '#include <beginnormal_vertex>\nvWN = normalize(mat3(modelMatrix) * objectNormal);\nvOP = position;');
   const DUST_FS = (fs) => fs
-    .replace('#include <common>', '#include <common>\nuniform float uDust;\nvarying vec3 vWN;\nvarying vec3 vOP;')
+    .replace('#include <common>', '#include <common>\nuniform float uDust;\nuniform sampler2D tDustN;\nvarying vec3 vWN;\nvarying vec3 vOP;')
     .replace('#include <map_fragment>', `#include <map_fragment>
       {
-        float n1 = sin(vOP.x * 210.0 + sin(vOP.z * 170.0) * 2.0) * sin(vOP.y * 190.0 + vOP.x * 90.0);
-        float n2 = sin(vOP.x * 610.0 + vOP.y * 420.0) * sin(vOP.z * 560.0 - vOP.x * 300.0);
-        float n = clamp(0.5 + 0.35 * n1 + 0.25 * n2, 0.0, 1.0);
+        float n1 = texture2D(tDustN, vOP.xz * 9.0 + vOP.y * 4.0).r;
+        float n2 = texture2D(tDustN, vOP.xy * 31.0 + vOP.z * 7.0).g;
+        float n = clamp(n1 * 0.75 + n2 * 0.5 - 0.15, 0.0, 1.0);
         float up = smoothstep(-0.25, 0.8, vWN.y);
         float d = clamp(uDust * (0.18 + 0.82 * up) * (0.35 + 0.9 * n), 0.0, 1.0);
-        diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.50, 0.48, 0.45), d * 0.78);
+        diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.47, 0.45, 0.42), smoothstep(0.1, 0.9, d) * 0.85);
       }`);
+  const dustNoise = (G.util && G.util.noiseTex) || (() => {
+    const d = new Uint8Array(64 * 64 * 4); for (let k = 0; k < d.length; k++) d[k] = Math.random() * 255;
+    const t = new THREE.DataTexture(d, 64, 64); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.needsUpdate = true; return t;
+  })();
   function makeRoastMat() {
     const m = new THREE.MeshStandardMaterial({ map: roastTex, normalMap: roastN, roughness: 0.9, metalness: 0 });
     m.color.setRGB(roastTex ? 0.56 : 0.2, roastTex ? 0.42 : 0.1, roastTex ? 0.40 : 0.08);
     if (roastN) m.normalScale.set(1.1, 1.1);
     const u = { uDust: { value: 0 } };
     m.userData.u = u;
-    m.onBeforeCompile = (sh) => { sh.uniforms.uDust = u.uDust; sh.vertexShader = DUST_VS(sh.vertexShader); sh.fragmentShader = DUST_FS(SKIN_FS(sh.fragmentShader)); };
+    m.onBeforeCompile = (sh) => { sh.uniforms.uDust = u.uDust; sh.uniforms.tDustN = { value: dustNoise }; sh.vertexShader = DUST_VS(sh.vertexShader); sh.fragmentShader = DUST_FS(SKIN_FS(sh.fragmentShader)); };
     m.customProgramCacheKey = () => 'potato-roast-dust';
     return m;
   }
   function makeFleshMat(v) {
     const t = texRep('flesh_' + v, 1, 1), n = nrm(t, 2.5);
-    const m = new THREE.MeshStandardMaterial({ map: t, normalMap: n, roughness: 0.62, metalness: 0 });
+    const m = new THREE.MeshStandardMaterial({ map: t, normalMap: n, roughness: 0.44, metalness: 0 });
     if (!t) m.color.set(v === 'purple' ? 0x7a2a8a : v === 'orange' ? 0xe08a20 : 0xf0c040);
-    if (n) m.normalScale.set(0.7, 0.7);
+    if (n) m.normalScale.set(0.9, 0.9);
     // gentle warm "inner glow" of hot moist flesh (very slight, reads as subsurface, not as a light)
     m.emissive.set(v === 'purple' ? 0x1a0620 : v === 'orange' ? 0x2a1000 : 0x261800);
     m.emissiveMap = t;
-    const ring = v === 'purple' ? '0.62, 0.50, 0.62' : '0.80, 0.62, 0.42';
+    const ring = v === 'purple' ? '0.62, 0.45, 0.66' : v === 'orange' ? '0.82, 0.58, 0.40' : '0.86, 0.66, 0.40';
+    const avg = v === 'purple' ? '0.24, 0.03, 0.36' : v === 'orange' ? '0.88, 0.30, 0.03' : '0.90, 0.48, 0.05';
     const skin = '0.20, 0.07, 0.08';
     m.onBeforeCompile = (sh) => {
       sh.vertexShader = sh.vertexShader
@@ -125,7 +132,8 @@ export function create(G) {
         .replace('#include <common>', '#include <common>\nvarying float vRad;')
         .replace('#include <map_fragment>', `#include <map_fragment>
           float fC = 1.0 - smoothstep(0.0, 0.85, vRad);
-          diffuseColor.rgb *= 0.86 + 0.34 * fC;
+          diffuseColor.rgb = mix(diffuseColor.rgb, vec3(${avg}), 0.5);
+          diffuseColor.rgb *= 0.84 + 0.36 * fC;
           float fR = smoothstep(0.74, 0.86, vRad) * (1.0 - smoothstep(0.90, 0.955, vRad));
           diffuseColor.rgb *= mix(vec3(1.0), vec3(${ring}), fR);
           float fS = smoothstep(0.95, 0.985, vRad);
@@ -151,13 +159,13 @@ export function create(G) {
   const _a = new V3(), _b = new V3(), _c = new V3(), _d = new V3(), _T = new V3(), _N = new V3(), _B = new V3();
   function makeShape(seed, scale) {
     const r = rng(seed);
-    const L = lerp(0.165, 0.215, r()) * scale;
+    const L = lerp(0.16, 0.22, r()) * scale;
     const R = L / (2 * lerp(2.9, 3.35, r()));
-    const bend = (5 + 10 * r()) * PI / 180;
+    const bend = (7 + 9 * r()) * PI / 180;
     const phi = r() * TAU;
     const bdir = new V3(0, Math.cos(phi), Math.sin(phi));
     const sag = L * bend / 8 * 4;
-    const kS = lerp(0.85, 1.15, r()), pH = lerp(0.42, 0.52, r()), pT = lerp(0.62, 0.8, r());
+    const kS = lerp(0.85, 1.15, r()), pH = lerp(0.5, 0.6, r()), pT = lerp(0.75, 0.95, r()), aH = lerp(2.0, 2.6, r()), aT = lerp(1.5, 1.9, r());
     const ell = lerp(0.05, 0.12, r()), ellA = r() * PI, gph = r() * TAU, gA = lerp(0.012, 0.03, r());
     const lumps = []; const nl = 2 + (r() < 0.6 ? 1 : 0);
     for (let k = 0; k < nl; k++) lumps.push({ t: lerp(0.18, 0.82, r()), th: r() * TAU, a: (r() < 0.5 ? -1 : 1) * lerp(0.05, 0.12, r()), wt: lerp(0.1, 0.22, r()), wa: lerp(0.6, 1.2, r()) });
@@ -172,8 +180,10 @@ export function create(G) {
     S.r0 = (t) => {
       t = clamp(t, 0, 1);
       const s = Math.pow(t, kS);
-      const p = lerp(pH, pT, t);
-      let rr = R * Math.pow(Math.max(0, Math.sin(PI * s)), p);
+      const x = 2 * s - 1;
+      // super-ellipse ends: blunt rounded head, longer tapering tail
+      const a = x < 0 ? aH : aT, b = x < 0 ? pH : pT;
+      let rr = R * Math.pow(Math.max(0, 1 - Math.pow(Math.abs(x), a)), b);
       rr = Math.max(rr, R * nub * smooth(0.7, 0.9, t) * (1 - smooth(0.982, 1.0, t)));
       return rr;
     };
@@ -205,7 +215,7 @@ export function create(G) {
     S.tcBreak = (th) => tb + tear(th);
     const biteRim = (th, bp) => {
       const top = 0.5 + 0.5 * Math.cos(th - bp[0]);
-      return 0.075 * Math.pow(top, 1.4) + 0.012 * Math.abs(Math.sin(1.5 * th + bp[1])) + 0.006 * Math.sin(4 * th + bp[2]);
+      return 0.07 * Math.pow(top, 1.4) + 0.03 * Math.abs(Math.sin(1.5 * th + bp[1])) + 0.006 * Math.sin(5 * th + bp[2]);
     };
     S.tcBiteA = (th) => tb * 0.64 - biteRim(th, biteA);
     S.tcBiteB = (th) => tb + (1 - tb) * 0.36 + biteRim(th, biteB);
@@ -265,25 +275,29 @@ export function create(G) {
     const R = S.R;
     const F = [0.14, 0.28, 0.42, 0.56, 0.68, 0.79, 0.88, 0.94, 0.975, 1.0];
     const rims = []; for (let j = 0; j < SEGS; j++) { const th = j / SEGS * TAU; rims.push(S.surf(tc(th), th, new V3())); }
-    const uo = r(), vo = r();
+    const uo = r(), vo = r(), ur = r() * TAU, cu = Math.cos(ur), su = Math.sin(ur);
     const noise = (x, y) => 0.5 * Math.sin(x * 380 + ph[0]) * Math.sin(y * 350 + ph[1]) + 0.3 * Math.sin((x + y) * 820 + ph[2]) + 0.2 * Math.sin((x - y) * 1500 + ph[3]) + 0.15 * Math.sin(x * 2300 + ph[4]) * Math.sin(y * 2100);
     const pos = [], uv = [], rad = [], idx = [];
     const p = new V3(), q = new V3();
     const push = (v, f) => {
       q.copy(v).sub(C);
       const x = q.dot(N), y = q.dot(B);
-      pos.push(v.x, v.y, v.z); uv.push(x / 0.042 + uo, y / 0.042 + vo); rad.push(f);
+      pos.push(v.x, v.y, v.z); uv.push((x * cu - y * su) / 0.06 + uo, (x * su + y * cu) / 0.06 + vo); rad.push(f);
     };
     const disp = (f, th, x, y) => {
       const nz = noise(x, y);
       if (!bite) {
-        const dome = R * 0.17 * (1 - f * f) * (1 + 0.15 * Math.sin(2 * th + ph[5]));
-        return dome + nz * 0.0019 * (1 - Math.pow(f, 8));
+        const dome = R * 0.16 * (1 - f * f) * (1 + 0.2 * Math.sin(2 * th + ph[5]));
+        // torn, fibrous break: a few broad lumps + a shallow crack + fine fluff
+        const lump = 0.0032 * Math.sin(x * 140 + ph[1]) * Math.sin(y * 120 + ph[2]) + 0.0018 * Math.sin((x * 0.7 + y) * 260 + ph[3]);
+        const crack = -0.0025 * Math.exp(-Math.pow((x * Math.cos(ph[4]) + y * Math.sin(ph[4])) / 0.0025, 2));
+        return dome + (lump + crack) * (1 - Math.pow(f, 4)) + nz * 0.0016 * (1 - Math.pow(f, 8));
       }
       const scal = 0.5 + 0.5 * Math.cos(3 * th + ph[5]);
       const bowl = -R * 0.32 * (1 - f * f) * (0.85 + 0.3 * scal);
-      const teeth = -0.0028 * Math.sin(PI * f) * Math.pow(Math.abs(Math.sin(2.5 * th + ph[4])), 0.6);
-      return bowl + teeth + nz * 0.0011 * (1 - Math.pow(f, 6));
+      const teeth = -0.0012 * Math.sin(PI * f) * Math.sin(2 * th + ph[4]);
+      const grooves = -0.0007 * Math.pow(Math.abs(Math.sin((x * Math.cos(ph[3]) + y * Math.sin(ph[3])) * 520)), 3) * (1 - f);
+      return bowl + teeth + grooves + nz * 0.0012 * (1 - Math.pow(f, 6));
     };
     // centre
     push(p.copy(C).addScaledVector(out, disp(0, 0, 0, 0)), 0);
@@ -359,7 +373,7 @@ export function create(G) {
   }
 
   // ---------------------------------------------------------------- tongs
-  const TH = 0.0015, RB = 0.009, ZB = 0.19, LS = 0.385, KINK = 0.006, REST_OPEN = 0.05, WIDE = 0.095;
+  const TH = 0.0024, RB = 0.009, ZB = 0.19, LS = 0.385, KINK = 0.006, REST_OPEN = 0.05, WIDE = 0.095;
   function ribbon(pts) {
     const P = [], Nn = [], I = [];
     const n = pts.length;
@@ -398,7 +412,7 @@ export function create(G) {
     g.setIndex(I);
     return g;
   }
-  const tongMat = new THREE.MeshStandardMaterial({ color: 0xc4c6ca, metalness: 1, roughness: 0.36 });
+  const tongMat = new THREE.MeshStandardMaterial({ color: 0xb4b2ae, metalness: 1, roughness: 0.38 });
   const tongsObj = new THREE.Group(); tongsObj.name = 'tongs';
   const pivU = new THREE.Group(), pivL = new THREE.Group();
   pivU.position.set(0, RB, ZB); pivL.position.set(0, -RB, ZB);
@@ -425,8 +439,7 @@ export function create(G) {
   G.scene.add(tongsObj);
   const openAngle = (o) => Math.asin(clamp((o / 2 + TH / 2 + KINK - RB) / LS, -0.2, 0.4));
   function setOpen(up, lo) { pivU.rotation.x = openAngle(up); pivL.rotation.x = -openAngle(lo); }
-  const REST_A = openAngle(REST_OPEN);
-  const restQ = new Q().setFromAxisAngle(X, REST_A);
+  const restQ = new Q().setFromAxisAngle(Zax, 1.05); // lying on the strip edges: seen from above as a V
   let restYOff = 0.004;
   {
     setOpen(REST_OPEN, REST_OPEN);
@@ -434,7 +447,20 @@ export function create(G) {
     const bx = new THREE.Box3().setFromObject(tongsObj, true);
     if (isFinite(bx.min.y)) restYOff = -bx.min.y + 0.0005;
   }
-  const gripQ = new Q().setFromAxisAngle(Y, 0.22).multiply(new Q().setFromAxisAngle(X, -0.62));
+  const gripQ = new Q();
+  const _gm = new THREE.Matrix4(), _gb = new V3(), _go = new V3(), _gw = new V3(), _ga = new V3();
+  // tongs come from the player's front-right, handle up; jaws open perpendicular to the potato's long axis
+  function gripOrient(pq, out) {
+    _gb.set(0.58, 0.62, 0.53).normalize();
+    _ga.set(1, 0, 0).applyQuaternion(pq);
+    _go.crossVectors(_ga, _gb);
+    if (_go.lengthSq() < 1e-4) _go.set(0, 1, 0);
+    _go.normalize();
+    if (_go.y < 0) _go.negate();
+    _gw.crossVectors(_go, _gb).normalize();
+    _gm.makeBasis(_gw, _go, _gb);
+    return out.setFromRotationMatrix(_gm);
+  }
   const TIP_LOCAL = new V3(0, 0, ZB - LS * 0.955);
   const T = { mode: 'rest', pi: -1, t: 0, dur: 0.15, p0: new V3(), q0: new Q(), o0: REST_OPEN, open: REST_OPEN, att: 0, attK: 0, gap: 0.05, puffed: false };
   const _tp = new V3(), _tq = new Q(), _tv = new V3();
@@ -442,8 +468,8 @@ export function create(G) {
     anchor('tongsRest', 0.08, 0, 1.40, outP); outP.y += restYOff;
     outQ.copy(restQ);
   }
-  function gripPose(pc, outP, outQ) {
-    outQ.copy(gripQ);
+  function gripPose(pc, outP, outQ, pq) {
+    gripOrient(pq || gripQ, outQ);
     outP.copy(TIP_LOCAL).applyQuaternion(outQ);
     outP.subVectors(pc, outP);
   }
@@ -469,7 +495,8 @@ export function create(G) {
       const c = cr[crumbNext]; crumbNext = (crumbNext + 1) % CRUMBS;
       c.p.copy(pos).add(_cs.set((Math.random() - 0.5) * 0.03, (Math.random() - 0.5) * 0.02, (Math.random() - 0.5) * 0.03));
       c.v.set((Math.random() - 0.5) * 0.25, Math.random() * 0.25, (Math.random() - 0.3) * 0.25);
-      c.life = 2.2 + Math.random(); c.s = 0.6 + Math.random() * 0.9; c.rest = floorY;
+      c.life = floorY < -1 ? 0.8 : 2.4 + Math.random(); c.s = 0.6 + Math.random() * 0.9; c.rest = floorY;
+      if (floorY >= -1) c.v.multiplyScalar(0.25);
       crumbs.setColorAt(crumbNext === 0 ? CRUMBS - 1 : crumbNext - 1, _col.set(CRUMB_COL[variety] || 0xe8b84a));
     }
     if (crumbs.instanceColor) crumbs.instanceColor.needsUpdate = true;
@@ -612,9 +639,9 @@ export function create(G) {
     let z = Zc.z - tot / 2;
     pots.forEach((P, k) => {
       const zc = z + w[k] / 2; z += w[k];
-      const yaw = (r() - 0.5) * 0.22, roll = r() * TAU;
+      const yaw = (r() - 0.5) * 0.4, roll = r() * TAU;
       quatYPR(yaw, 0, roll, P.zQuat);
-      P.zPos.set(Zc.x + (r() - 0.5) * 0.03, trayY - lowestY(P.verts, P.zQuat), zc);
+      P.zPos.set(Zc.x + (r() - 0.5) * 0.06, trayY - lowestY(P.verts, P.zQuat), zc);
     });
   }
   const ASH_SLOTS = [[-0.17, 0.07, 0.35], [0.165, 0.085, -0.45], [0.0, -0.15, 0.08]];
@@ -628,12 +655,12 @@ export function create(G) {
   function ashY(x, z) {
     const top = pileNum('topY', 0.12), rad = Math.max(0.2, pileNum('radius', 0.55));
     const q = Math.hypot(x, z) / rad;
-    return top * Math.max(0.2, 1 - 0.75 * q * q);
+    return top * Math.max(0.3, 1 - 0.35 * q * q);
   }
   function ashPose(P, k, outP) {
     const sy = ashY(P.ax, P.az);
     const R = P.S.Rmax;
-    return outP.set(P.ax, sy + lerp(-1.6 * R - 0.02, 0.12 * R, clamp(k, 0, 1)), P.az);
+    return outP.set(P.ax, sy + lerp(-1.6 * R - 0.02, 0.3 * R, clamp(k, 0, 1)), P.az);
   }
   function trayY() { return anchor('zaru', -0.62, 0, 1.22, _zA).y + 0.025; }
 
@@ -646,12 +673,14 @@ export function create(G) {
     const s = h === 0 ? 1 : -1;
     _tv.set(s, 0, 0);
     const qa = new Q().setFromUnitVectors(S0.nLocal, _tv);
-    const e = 0.5;
+    const e = 0.72;
     const dx = s * 0.45, dz = 1, dl = Math.hypot(dx, dz);
     const psi = s > 0 ? Math.atan2(-dz / dl, dx / dl) : Math.atan2(dz / dl, -dx / dl);
     outQ.setFromAxisAngle(Y, psi).multiply(_tq.setFromAxisAngle(Zax, s * e)).multiply(qa);
     const stg = H.stages[st] || S0;
-    outP.set(P.zPos.x + (h === 0 ? -1 : 1) * (0.042 + P.S.R * 0.4), trayY() - lowestY(stg.verts, outQ), P.zPos.z + 0.02);
+    const Zc = anchor('zaru', -0.62, 0, 1.22, _zA);
+    const cx = Zc.x + (P.i - 1) * 0.125, cz = Zc.z + 0.135 - Math.abs(P.i - 1) * 0.04;
+    outP.set(cx + (h === 0 ? -1 : 1) * (0.024 + P.S.R * 0.4), trayY() - lowestY(stg.verts, outQ), cz);
     return outP;
   }
 
@@ -672,7 +701,7 @@ export function create(G) {
         const seed = (r() * 4294967295) >>> 0;
         pots.push(makePotato(k, seed, k === big ? 1.5 : 1, vars[k]));
         const c = rawMats[k].color;
-        if (skinTex) c.setRGB(0.44 + r() * 0.06, 0.17 + r() * 0.04, 0.23 + r() * 0.05);
+        if (skinTex) c.setRGB(0.3 + r() * 0.04, 0.24 + r() * 0.04, 0.27 + r() * 0.04);
         roastMats[k].userData.u.uDust.value = 0;
       }
       layoutBasket(r); layoutZaru(r); layoutAsh(r);
@@ -822,7 +851,7 @@ export function create(G) {
     if (P.state !== 'zaru') return;
     P.brkT = 0;
   }
-  const _hp = new V3(), _hq = new Q(), _hp2 = new V3();
+  const _hp = new V3(), _hq = new Q(), _hp2 = new V3(), _hpv = new V3();
   function breakOpen(i) {
     if (!valid(i)) return; const P = pots[i];
     if (P.state !== 'zaru' || P.fly) return;
@@ -850,7 +879,7 @@ export function create(G) {
     const hinge = _tv.crossVectors(axisW, Y); if (hinge.lengthSq() < 1e-6) hinge.set(0, 0, 1); hinge.normalize();
     const ang = (h === 0 ? 1 : -1) * a * 0.61;
     _tq.setFromAxisAngle(hinge, ang);
-    const piv = new V3().copy(C); piv.y -= P.S.R * 0.85;
+    const piv = _hpv.copy(C); piv.y -= P.S.R * 0.85;
     outP.copy(C).sub(piv).applyQuaternion(_tq).add(piv).addScaledVector(axisW, (h === 0 ? -1 : 1) * 0.004 * a);
     outQ.copy(_tq).multiply(rq);
   }
@@ -866,14 +895,15 @@ export function create(G) {
     // target: on the line to the camera, drifting toward the lower centre of the view
     const cam = G.camera; cam.getWorldPosition(_cam);
     const face = H.g.localToWorld(H.stages[H.st].centre.clone());
-    const L = face.clone().lerp(_cam, 0.55);
+    const fd = face.distanceTo(_cam);
+    const L = face.clone().lerp(_cam, clamp(Math.max(0.55, 1 - 0.5 / Math.max(0.01, fd)), 0, 0.85));
     cam.getWorldDirection(_fw); _up.set(0, 1, 0).applyQuaternion(cam.quaternion);
     const dist = L.distanceTo(_cam);
     const tanH = Math.tan((cam.fov || 50) * PI / 360);
     const Vp = _cam.clone().addScaledVector(_fw, dist).addScaledVector(_up, -dist * tanH * 0.42);
     const pT = L.lerp(Vp, 0.7);
     const nW = H.stages[0].nLocal.clone().applyQuaternion(H.quat);
-    const toCam = _cam.clone().sub(pT).normalize();
+    const toCam = _cam.clone().sub(pT).normalize().multiplyScalar(Math.cos(0.6)).addScaledVector(_up, Math.sin(0.6)).normalize();
     const qT = new Q().setFromUnitVectors(nW, toCam).multiply(H.quat);
     H.anim = { kind: 'bite', t: 0, p0: H.pos.clone(), q0: H.quat.clone(), pT: pT.clone().sub(face).add(H.pos), qT, switched: false };
     return H.bites;
@@ -971,7 +1001,7 @@ export function create(G) {
           snd('bite'); try { G.rig && G.rig.nudge && G.rig.nudge(0.08); } catch (e) { /* */ }
           H.g.updateMatrixWorld();
           const fc = H.g.localToWorld(H.stages[H.st].centre.clone());
-          spawnCrumbs(fc, P.variety, 5, trayY() + 0.004);
+          spawnCrumbs(fc, P.variety, 6, -10);
           if (H.bites <= 0) {
             H.g.visible = false; H.done = true; H.anim = null;
             const land = new V3(H.restPos.x + (Math.random() - 0.5) * 0.03, trayY() + 0.003, H.restPos.z + (Math.random() - 0.5) * 0.03);
@@ -987,7 +1017,11 @@ export function create(G) {
           const k = ease((A.t - R1 - HO) / RT);
           H.pos.lerpVectors(A.pT, A.p0, k); H.pos.y += Math.sin(PI * k) * 0.02;
           H.quat.slerpQuaternions(A.qT, A.q0, k);
-          if (k >= 1) { H.anim = null; H.pos.copy(H.restPos); H.quat.copy(A.q0); snd('tok'); }
+          if (k >= 1) {
+            H.anim = null; H.pos.copy(H.restPos); H.quat.copy(A.q0); snd('tok');
+            H.g.updateMatrixWorld();
+            spawnCrumbs(H.g.localToWorld(H.stages[H.st].centre.clone()), P.variety, 3, trayY() + 0.003);
+          }
         }
       }
     } else if (!H.done) {
@@ -1006,7 +1040,7 @@ export function create(G) {
     const P = valid(T.pi) ? pots[T.pi] : null;
     if (T.mode === 'go' && P) {
       T.t += dt; const u = clamp(T.t / T.dur, 0, 1), k = easeOut(u);
-      gripPose(P.pos, _tp, _tq);
+      gripPose(P.pos, _tp, _tq, P.quat);
       tongsObj.position.lerpVectors(T.p0, _tp, k); tongsObj.position.y += Math.sin(PI * u) * 0.05;
       tongsObj.quaternion.slerpQuaternions(T.q0, _tq, k);
       T.open = u < 0.65 ? lerp(T.o0, WIDE, u / 0.65) : lerp(WIDE, T.gap, (u - 0.65) / 0.35);
@@ -1015,7 +1049,7 @@ export function create(G) {
         if (!T.puffed) { T.puffed = true; snd('tongs'); call('fire', 'ashPuff', P.pos.clone(), 0.6); }
       }
     } else if (T.mode === 'hold' && P) {
-      gripPose(P.pos, tongsObj.position, tongsObj.quaternion);
+      gripPose(P.pos, tongsObj.position, tongsObj.quaternion, P.quat);
       T.open = T.gap;
       if (P.state !== 'tongs' && !P.fly) tongsStart('open', 0.12);
     } else if (T.mode === 'open') {
