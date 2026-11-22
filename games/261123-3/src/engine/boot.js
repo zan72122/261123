@@ -65,7 +65,12 @@ function bootInner(opts) {
     return guard(() => stage[name](...args), (stage.id || '?') + '.' + name);
   }
 
-  const capPR = Math.min(window.devicePixelRatio || 1, 2);
+  // Pixel budget: dpr is capped at 2, and the total drawing-buffer size is capped too, so big iPads
+  // (2732x2048 at dpr 2 = 5.6 MP) shade about as many pixels as a large iPhone instead of 3.5x as many.
+  const DPR = Math.min(window.devicePixelRatio || 1, 2);
+  const MAX_PIXELS = 2.6e6;
+  let capPR = DPR;
+  const budgetPR = (w, h) => Math.max(1, Math.min(DPR, Math.sqrt(MAX_PIXELS / Math.max(1, w * h))));
   let prScale = 1;
   renderer.setPixelRatio(capPR);
   setupRenderer(renderer);
@@ -167,6 +172,8 @@ function bootInner(opts) {
   // --- initial pass of view metrics so module factories see a sized renderer
   function applySize(m) {
     view.w = m.w; view.h = m.h; view.insets = m.ins; view.rect = m.rect;
+    capPR = budgetPR(m.w, m.h);
+    renderer.setPixelRatio(capPR * prScale);
     renderer.setSize(m.w, m.h, false);
     camera.aspect = m.w / m.h; camera.updateProjectionMatrix();
   }
@@ -252,24 +259,113 @@ function bootInner(opts) {
     renderer.shadowMap.type = THREE.PCFShadowMap;
     renderer.shadowMap.needsUpdate = true;
   }
+  // Aim for a steady display rate: shed resolution as soon as frames run long (not only below 30 fps),
+  // and climb back slowly, with a back-off below the scale that last proved too heavy (avoids
+  // oscillating between a smooth and a juddery resolution every couple of seconds).
+  let failScale = 2, failT = 0;
   function dynres(realDt) {
     if (!dynEnabled) return;
     if (grace > 0) { grace -= realDt; ftAvg = 1 / 60; stepT = 0; upT = 0; return; }
     const ft = Math.min(realDt, 0.25);
-    ftAvg += (ft - ftAvg) * 0.06;
+    ftAvg += (ft - ftAvg) * 0.08;
     stepT += realDt;
+    if (failT > 0 && (failT -= realDt) <= 0) failScale = 2;
     if (stepT >= 1) {
-      if (ftAvg > 1 / 30 && prScale > 0.55) {
-        prScale = Math.max(0.55, prScale - (ftAvg > 1 / 20 ? 0.15 : 0.08)); setPR(); stepT = 0; upT = 0; ftAvg = 1 / 32;
-      } else if (ftAvg < 1 / 50 && prScale < 1) {
+      // a steady ~30 fps may just be a 30 Hz display cap (iOS Low Power Mode): only shed a little for that
+      const floor = ftAvg > 1 / 27 ? 0.55 : 0.7;
+      if (ftAvg > 1 / 46 && prScale > floor + 1e-4) {
+        failScale = prScale; failT = 20;
+        prScale = Math.max(floor, prScale - (ftAvg > 1 / 24 ? 0.15 : 0.08)); setPR(); stepT = 0; upT = 0; ftAvg = 1 / 50;
+      } else if (ftAvg < 1 / 56 && prScale < 1 && prScale + 0.05 < failScale - 1e-4) {
         upT += stepT; stepT = 0;
-        if (upT >= 2) { prScale = Math.min(1, prScale + 0.05); setPR(); upT = 0; }
+        if (upT >= 2.5) { prScale = Math.min(1, prScale + 0.05); setPR(); upT = 0; }
       } else { stepT = 0; upT = 0; }
     }
     if (prScale <= 0.5501 && ftAvg > 1 / 24 && !quality.low) { lowT += realDt; if (lowT >= 3) goLow(); }
     else lowT = 0;
   }
   ctx.quality.setLow = goLow;
+
+  // --- shadow cache: the shadow map is only redrawn when something that casts (or the light) changed.
+  // Most frames only the camera moves (idle breathing, shot transitions), which doesn't affect it.
+  renderer.shadowMap.autoUpdate = false;
+  renderer.shadowMap.needsUpdate = true;
+  // Slow drift (bobbing in the tub, a swaying hanger: <= 2 mm per frame) refreshes it every other frame;
+  // anything faster, or any structural change (geometry, visibility, light), refreshes it immediately.
+  let sig = new Float64Array(4096), sigN = 0, sigHard = true, sigMove = 0, shadowSkip = 0;
+  function sigPush(v) {
+    if (sigN >= sig.length) { const n = new Float64Array(sig.length * 2); n.set(sig); sig = n; sigHard = true; }
+    if (sig[sigN] !== v) { sig[sigN] = v; sigHard = true; }
+    sigN++;
+  }
+  function sigMat(m) {
+    const e = m.elements;
+    if (sigN + 16 > sig.length) { for (let i = 0; i < 16; i++) sigPush(e[i]); return; }
+    for (let i = 0; i < 16; i++) {
+      const d = Math.abs(sig[sigN] - e[i]);
+      if (d > 0) { if (d > sigMove) sigMove = d; sig[sigN] = e[i]; }
+      sigN++;
+    }
+  }
+  function sigVisit(o) {
+    if (o.isLight && o.castShadow && o.shadow) {
+      sigPush(-1); sigPush(o.id); const m0 = sigMove; sigMat(o.matrixWorld);
+      if (o.target) sigMat(o.target.matrixWorld);
+      if (sigMove > m0) sigHard = true; // the light itself moved
+      const c = o.shadow.camera; sigPush(c.left); sigPush(c.right); sigPush(c.top); sigPush(c.bottom); sigPush(c.near); sigPush(c.far);
+      sigPush(o.shadow.mapSize.x); sigPush(o.shadow.map ? 1 : 0);
+    } else if (o.castShadow && (o.isMesh || o.isLine || o.isPoints)) {
+      const g = o.geometry, mat = o.material;
+      sigPush(o.id); sigMat(o.matrixWorld);
+      if (g) {
+        sigPush(g.id); const a = g.attributes.position; sigPush(a ? a.version : 0); sigPush(g.index ? g.index.version : 0);
+        sigPush(g.drawRange.start); sigPush(g.drawRange.count);
+      }
+      if (o.isInstancedMesh) { sigPush(o.count); sigPush(o.instanceMatrix.version); }
+      sigPush(mat && !Array.isArray(mat) && mat.visible === false ? 0 : 1);
+    }
+    const ch = o.children;
+    for (let i = 0; i < ch.length; i++) if (ch[i].visible) sigVisit(ch[i]);
+  }
+  let shadowPending = false;
+  function shadowCheck() {
+    if (!renderer.shadowMap.enabled) return;
+    scene.updateMatrixWorld();
+    sigN = 0; sigMove = 0;
+    sigVisit(scene);
+    sigPush(-2); sigPush(sigN); // length marker
+    if (sigHard || sigMove > 0.002) { renderer.shadowMap.needsUpdate = true; shadowPending = false; shadowSkip = 0; }
+    else if (sigMove > 0 || shadowPending) {
+      // slow drift: refresh on alternate frames; a skipped change is always picked up on the next one
+      if (shadowSkip > 0) { renderer.shadowMap.needsUpdate = true; shadowPending = false; shadowSkip = 0; }
+      else { shadowPending = true; shadowSkip = 1; }
+    }
+    sigHard = false;
+  }
+
+  // --- warm-up: compile every material and upload every texture once, right after the first frame,
+  // so later stages (props that are hidden until then, new fx) don't stall on a shader compile or a
+  // texture upload mid-animation — the main source of hitches on iOS.
+  function warmUp() {
+    const hiddenObjs = [], texs = new Set();
+    scene.traverse((o) => {
+      if (!o.visible) { hiddenObjs.push(o); o.visible = true; }
+      const mats = o.material ? (Array.isArray(o.material) ? o.material : [o.material]) : null;
+      if (!mats) return;
+      for (const m of mats) {
+        if (!m) continue;
+        for (const k in m) { const v = m[k]; if (v && v.isTexture && !v.isRenderTargetTexture) texs.add(v); }
+        if (m.uniforms) for (const k in m.uniforms) { const v = m.uniforms[k] && m.uniforms[k].value; if (v && v.isTexture && !v.isRenderTargetTexture) texs.add(v); }
+      }
+    });
+    try {
+      if (typeof renderer.compileAsync === 'function') renderer.compileAsync(scene, camera).catch((e) => report(e, 'warmUp'));
+      else renderer.compile(scene, camera);
+    } catch (e) { report(e, 'warmUp'); }
+    for (const o of hiddenObjs) o.visible = false;
+    if (typeof renderer.initTexture === 'function') for (const t of texs) guard(() => renderer.initTexture(t), 'warmUp.tex');
+  }
+  let frameNo = 0;
 
   // --- loop
   let raf = 0, last = 0, hidden = !!document.hidden, lost = false;
@@ -310,8 +406,10 @@ function bootInner(opts) {
       processFlow();
       guard(() => ctx.hint.update(dt, input.down), 'hint');
       guard(() => ctx.cam.update(dt, input.down), 'cam');
+      guard(shadowCheck, 'shadowCheck');
       guard(() => renderer.render(scene, camera), 'render');
       dynres(realDt);
+      if (++frameNo === 2) { guard(warmUp, 'warmUp'); grace = Math.max(grace, 1); }
       saver.tick();
       window.__ready = true;
     } catch (e) { report(e, 'frame'); }
@@ -345,6 +443,7 @@ function bootInner(opts) {
   canvas.addEventListener('webglcontextlost', (e) => { e.preventDefault(); lost = true; stop(); input.cancel(); }, false);
   canvas.addEventListener('webglcontextrestored', () => {
     lost = false;
+    renderer.shadowMap.needsUpdate = true;
     if (engineEnv && scene.environment === engineEnv) {
       try { engineEnv = makeEnvironment(renderer); scene.environment = engineEnv; } catch (e) { report(e, 'environment'); }
     }
