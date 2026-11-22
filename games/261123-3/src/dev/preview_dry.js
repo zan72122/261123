@@ -6,12 +6,12 @@ const q = new URLSearchParams(location.search);
 const view = q.get('view') || 'spinner';
 const num = (k, d) => (q.get(k) != null ? Number(q.get(k)) : d);
 const CAMS = {
-  spinner: { cam: [0, 0.75, 0.72], look: [0, 0.2, 0], fov: 40 },
+  spinner: { cam: [0, 0.62, 1.0], look: [0, 0.19, 0], fov: 40 },
   open: { cam: [0.12, 0.85, 0.42], look: [0.12, 0.08, 0], fov: 45 },
-  spin: { cam: [0, 0.75, 0.72], look: [0, 0.2, 0], fov: 40 },
+  spin: { cam: [0, 0.62, 1.0], look: [0, 0.17, 0], fov: 40 },
   pole: { cam: [-1.4, 0.9, 0.55], look: [1.25, 0.85, 0.55], fov: 50 },
-  clip: { cam: [1.02, 1.05, 0.44], look: [1.25, 1.03, 0.49], fov: 30 },
-  stands: { cam: [-2.2, 1.2, 0.55], look: [1.25, 0.7, 0.55], fov: 55 },
+  clip: { cam: [1.0, 1.1, 0.3], look: [1.25, 1.06, 0.49], fov: 32 },
+  stands: { cam: [-0.4, 1.1, 3.0], look: [1.35, 0.7, 0.4], fov: 45 },
 };
 
 startPreview(({ THREE, scene, ctx }) => {

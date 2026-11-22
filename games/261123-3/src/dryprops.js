@@ -177,20 +177,25 @@ export function createSpinner(ctx) {
   const LID_LOCAL_Y = 0.038;                                  // crank plane above tub rim
   const LID_Y = TUB_TOP + LID_LOCAL_Y;
 
-  const white = plastic(0xebe9e3, 0.4);
-  const whiteD = plastic(0xebe9e3, 0.4, { side: THREE.DoubleSide });
+  const white = plastic(0xeeebe3, 0.38);
+  const whiteD = plastic(0xeeebe3, 0.38, { side: THREE.DoubleSide });
   const greyRub = plastic(0x55575a, 0.8);
   const orange = new THREE.MeshPhysicalMaterial({ color: 0xe8661c, roughness: 0.36, metalness: 0, clearcoat: 0.3, clearcoatRoughness: 0.4, roughnessMap: T.plasticRough });
 
   // ---- base skirt + feet ----
-  const baseProf = [[0.146, 0.066], [0.152, 0.071], [0.160, 0.0745], [0.167, 0.0738], [0.1715, 0.0705], [0.1735, 0.065],
-    [0.1745, 0.05], [0.1752, 0.047], [0.1738, 0.0445], [0.1748, 0.042], [0.1755, 0.03], [0.1745, 0.024], [0.171, 0.0195], [0.163, 0.0175], [0.0, 0.0175]];
+  const baseProf = [[0.149, 0.062], [0.151, 0.066], [0.154, 0.0675], [0.166, 0.0682], [0.1695, 0.0675], [0.1718, 0.0655], [0.1728, 0.0625],
+    [0.1732, 0.0475], [0.1736, 0.0465], [0.1722, 0.0458], [0.1722, 0.0438], [0.1738, 0.0431], [0.1742, 0.0245], [0.1736, 0.0215], [0.1716, 0.0192], [0.168, 0.0182], [0.0, 0.0182]];
   body.add(mesh(lathe(baseProf, 96), whiteD));
   for (let i = 0; i < 4; i++) {
     const a = (i + 0.5) / 4 * TAU; const leg = new THREE.Group(); leg.position.set(Math.cos(a) * 0.138, 0, Math.sin(a) * 0.138);
-    leg.add(mesh(lathe([[0, 0.019], [0.0165, 0.019], [0.0155, 0.012], [0.0145, 0.005], [0, 0.005]], 24), white));
-    leg.add(mesh(new THREE.CylinderGeometry(0.0135, 0.014, 0.005, 24), greyRub).translateY(0.0025));
+    leg.add(mesh(lathe([[0, 0.0195], [0.0165, 0.0195], [0.0155, 0.012], [0.0145, 0.0054], [0, 0.0054]], 24), white));
+    leg.add(mesh(new THREE.CylinderGeometry(0.0135, 0.014, 0.005, 24), greyRub).translateY(0.0029));
     body.add(leg);
+  }
+  // hold-down grip ears at ±X
+  for (const sx of [-1, 1]) {
+    const ear = mesh(new RoundedBoxGeometry(0.034, 0.011, 0.075, 3, 0.004), white); ear.position.set(sx * 0.181, 0.0615, 0); body.add(ear);
+    const web = mesh(new RoundedBoxGeometry(0.016, 0.03, 0.006, 2, 0.002), white); web.position.set(sx * 0.178, 0.048, 0); body.add(web);
   }
   // drain spout on +Z, moulded with the base, angled slightly down
   const SPOUT_TILT = 0.2;
@@ -211,15 +216,12 @@ export function createSpinner(ctx) {
   }
   tubProf.push([0.1565, TUB_TOP - 0.006], [0.158, TUB_TOP - 0.002], [0.16, TUB_TOP]);
   const tubGeo = lathe(tubProf, 96);
-  const tint = 0xcfd6d8;
-  const tubBack = mesh(tubGeo, clearMat(tint, 0.13, THREE.BackSide, 0.35), false, false); tubBack.renderOrder = 1;
-  const tubFront = mesh(tubGeo, clearMat(tint, 0.10, THREE.FrontSide, 0.6), false, false); tubFront.renderOrder = 7;
+  const tint = 0xbcc6ca;
+  const tubBack = mesh(tubGeo, clearMat(tint, 0.15, THREE.BackSide, 0.45), false, false); tubBack.renderOrder = 1;
+  const tubFront = mesh(tubGeo, clearMat(tint, 0.15, THREE.FrontSide, 0.9), false, false); tubFront.renderOrder = 7;
   body.add(tubBack, tubFront);
   const rim = mesh(new THREE.TorusGeometry(0.1575, 0.0032, 10, 96), clearMat(0xd8dfe1, 0.45, THREE.FrontSide, 0.4), false, false);
   rim.rotation.x = Math.PI / 2; rim.position.y = TUB_TOP - 0.001; rim.renderOrder = 8; body.add(rim);
-  // shadow proxy for the clear tub (faint): an invisible-colour mesh that only casts
-  const shProxy = new THREE.Mesh(new THREE.CylinderGeometry(0.157, 0.155, TUB_TOP - TUB_Y0, 32, 1, true), new THREE.MeshBasicMaterial({ colorWrite: false, depthWrite: false }));
-  shProxy.position.y = (TUB_TOP + TUB_Y0) / 2; shProxy.castShadow = true; body.add(shProxy);
 
   // ---- basket (spins) ----
   const basket = new THREE.Group(); basket.name = 'spinBasket'; body.add(basket);
@@ -314,15 +316,22 @@ export function createSpinner(ctx) {
 
   // ---- lid with crank ----
   const lid = new THREE.Group(); lid.name = 'spinLid'; group.add(lid);
-  lid.add(mesh(lathe([[0.084, 0.006], [0.088, 0.0105], [0.095, 0.0125], [0.15, 0.0135], [0.159, 0.0122], [0.1645, 0.0085], [0.1662, 0.002],
-    [0.1662, -0.014], [0.1648, -0.0185], [0.1622, -0.0188], [0.161, -0.015], [0.161, -0.002], [0.152, 0.0045], [0.092, 0.004], [0.084, 0.002]], 96), whiteD));
+  lid.add(mesh(lathe([[0.084, 0.006], [0.0865, 0.0105], [0.0905, 0.0122], [0.118, 0.0128], [0.1195, 0.0142], [0.1235, 0.0142], [0.125, 0.0129], [0.158, 0.0128], [0.1625, 0.0122], [0.1655, 0.0102], [0.1668, 0.0068],
+    [0.167, -0.0105], [0.1664, -0.0128], [0.1645, -0.0136], [0.1625, -0.013], [0.1615, -0.01], [0.1615, -0.002], [0.152, 0.0045], [0.092, 0.004], [0.084, 0.002]], 128), whiteD));
   const domeProf = []; for (let i = 0; i <= 12; i++) { const r = 0.087 * i / 12; domeProf.push([r, 0.008 + 0.018 * (1 - (r / 0.087) ** 2)]); }
   const domeGeo = lathe(domeProf, 64);
   const domeB = mesh(domeGeo, clearMat(tint, 0.12, THREE.BackSide, 0.3), false, false); domeB.renderOrder = 7;
   const domeF = mesh(domeGeo, clearMat(tint, 0.10, THREE.FrontSide, 0.6), false, false); domeF.renderOrder = 8;
   lid.add(domeB, domeF);
-  const bridge = mesh(new RoundedBoxGeometry(0.31, 0.014, 0.044, 3, 0.005), white); bridge.position.y = 0.021; lid.add(bridge);
-  lid.add(mesh(lathe([[0, 0.0335], [0.026, 0.0335], [0.033, 0.031], [0.037, 0.026], [0.039, 0.02], [0.04, 0.014]], 48), white));
+  {
+    const sh = new THREE.Shape(); sh.moveTo(-0.152, 0.011); sh.lineTo(0.152, 0.011);
+    sh.quadraticCurveTo(0.158, 0.011, 0.158, 0.016); sh.quadraticCurveTo(0.158, 0.021, 0.15, 0.021);
+    sh.bezierCurveTo(0.1, 0.021, 0.07, 0.03, 0.04, 0.031); sh.lineTo(-0.04, 0.031); sh.bezierCurveTo(-0.07, 0.03, -0.1, 0.021, -0.15, 0.021);
+    sh.quadraticCurveTo(-0.158, 0.021, -0.158, 0.016); sh.quadraticCurveTo(-0.158, 0.011, -0.152, 0.011);
+    const bg = new THREE.ExtrudeGeometry(sh, { depth: 0.034, bevelEnabled: true, bevelThickness: 0.004, bevelSize: 0.0025, bevelSegments: 3, curveSegments: 16 });
+    bg.translate(0, 0, -0.017); lid.add(mesh(bg, white));
+  }
+  lid.add(mesh(lathe([[0, 0.0338], [0.024, 0.0338], [0.0285, 0.0332], [0.0315, 0.031], [0.0325, 0.028], [0.0325, 0.016]], 48), white));
   // gear visible through the dome
   {
     const sh = new THREE.Shape(); const nT = 24;
@@ -530,7 +539,14 @@ function pegHalfGeo(mirror) {
   if (mirror) pts.reverse();
   const sh = new THREE.Shape(pts);
   const g = new THREE.ExtrudeGeometry(sh, { depth: 0.012, bevelEnabled: true, bevelThickness: 0.0012, bevelSize: 0.0007, bevelSegments: 3, curveSegments: 6 });
-  g.translate(0, 0, -0.006); g.computeVertexNormals();
+  g.translate(0, 0, -0.006);
+  const pa = g.attributes.position;
+  for (let i = 0; i < pa.count; i++) {
+    const y = pa.getY(i); let w = 0.78 + 0.27 * smooth(0.012, 0.058, y);
+    if (y > 0.068) { const t = (y - 0.068) / 0.0085; w *= Math.sqrt(Math.max(0.05, 1 - t * t * 0.75)); }
+    pa.setZ(i, pa.getZ(i) * w);
+  }
+  g.computeVertexNormals();
   return g;
 }
 function outerX(y) { for (let i = 1; i < PEG_OUT.length; i++) { const a = PEG_OUT[i - 1], b = PEG_OUT[i]; if (y <= b[1]) { const t = (y - a[1]) / (b[1] - a[1]); return a[0] + (b[0] - a[0]) * t; } } return PEG_OUT[PEG_OUT.length - 1][0]; }
@@ -592,7 +608,7 @@ export function createHanger(ctx) {
     const cap = mesh(cg, plasticPale); cap.position.set(P.x, BAR_Y, HZ + e * (BAR_LEN / 2 - 0.018)); hang.add(cap);
   }
   // clips
-  const COLORS = [0xf2a7b6, 0x93d6b9, 0xd8e6f2];
+  const COLORS = [0xf4a9b8, 0xa6e0c6, 0xdde9f3];
   const G = 9.81;
   const LINK_TO_GRIP = BAR_Y - L.CLIP_Y; // 0.14
   const wireMat = new THREE.MeshStandardMaterial({ color: 0xd2d5d8, metalness: 1, roughness: 0.28 });
