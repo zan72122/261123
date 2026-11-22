@@ -769,7 +769,7 @@
     }
     if (ix === 3) {
       if (flip.drag) return null;
-      h.actors = [W.sideA]; h.ar = 0;
+      h.actors = [W.sideA]; h.ar = 0.42;
       h.from = V(-0.40, 0.40, -0.10);
       h.toScr = { dx: 0, dy: -0.5 };
       h.halo = { pos: V(-0.40, 0.468, -0.085), sx: 0.36, sz: 0.025, bill: false };
@@ -873,11 +873,11 @@
     var k = 0;
     if (h) {
       if (level < 2) k = 0.25 + 0.45 * (0.5 - 0.5 * Math.cos(TAU * t / 1.4));
-      else k = 0.45 + 0.55 * (0.5 - 0.5 * Math.cos(TAU * t / 0.8));
+      else k = 0.4 + 0.4 * (0.5 - 0.5 * Math.cos(TAU * t / 0.8));
     }
     for (var i = 0; i < glowables.length; i++) {
       var o = glowables[i];
-      setGlowK(o, actorSet.indexOf(o) >= 0 ? 0.6 * k * (h ? h.gmul : 1) : 0);
+      setGlowK(o, actorSet.indexOf(o) >= 0 ? 0.55 * k * (h ? h.gmul : 1) : 0);
     }
     // charger LED pulse when the spare battery is the actor
     if (h && h.key === 'battery') W.charger.userData.setLed('green', 0.4 + 0.6 * k);
@@ -899,7 +899,7 @@
     var ha = W.haloA, ar = h ? (h.ar === undefined ? 0.16 : h.ar) : 0;
     if (h && ar > 0 && h.from) {
       var am = ar * (level >= 2 ? 1.25 : 1);
-      ha.position.copy(h.from); ha.scale.set(am, am, 1); ha.userData.setStrength(0.22 + 0.38 * k);
+      ha.position.copy(h.from); ha.scale.set(am, am, 1); ha.userData.setStrength(0.16 + 0.34 * k);
     } else ha.userData.setStrength(0);
     // nudge（1.5 秒で最初の小さな動き。音は 4 秒から）
     if (h && level >= 1 && !hintPinged) { hintPinged = true; snd('ping', { vol: 0.6 }); }
