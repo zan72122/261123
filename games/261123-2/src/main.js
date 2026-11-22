@@ -650,13 +650,13 @@ async function boot() {
       const a = fAlpha * Math.min(1, alpha + (fHide ? 1 : 0));
       // scale to ~10 % of screen height
       const dist = Math.max(0.2, camera.position.distanceTo(fp));
-      const sc = 0.10 * 2 * dist * Math.tan(camera.fov * Math.PI / 360) / LEN;
+      const sc = 0.12 * 2 * dist * Math.tan(camera.fov * Math.PI / 360) / LEN;
       // orientation: axis from tip toward the player's hand (toward camera, up ~50 deg), slight lean to the right
       toCam.copy(camera.position).sub(fp); toCam.y = 0;
       if (toCam.lengthSq() < 1e-6) toCam.set(0, 0, 1);
       toCam.normalize();
       xA.crossVectors(worldUp, toCam).normalize(); // screen-right
-      yA.copy(toCam).multiplyScalar(Math.cos(0.9)).addScaledVector(worldUp, Math.sin(0.9)).addScaledVector(xA, 0.22).normalize();
+      yA.copy(toCam).multiplyScalar(Math.cos(0.36)).addScaledVector(worldUp, Math.sin(0.36)).addScaledVector(xA, 0.42).normalize();
       zA.copy(worldUp).addScaledVector(yA, -worldUp.dot(yA)).normalize(); // nail side faces up
       xA.crossVectors(yA, zA).normalize();
       mtx.makeBasis(xA, yA, zA);
