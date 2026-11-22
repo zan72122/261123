@@ -533,8 +533,8 @@ roughnessFactor = mix(roughnessFactor, 1.0, max(bChar*0.6, bAsh));`)
     hvx: 0, hvz: 0, inX: 0, inZ: 0, inVx: 0, inVz: 0, gotPoint: false,
   };
   function rakeRest() {
-    rk.x = 0.92; rk.z = 0.62; rk.vx = rk.vz = 0;
-    rk.yaw = Math.atan2(1, -0.45); rk.pitch = FLAT_PITCH; rk.pv = 0; rk.roll = 0.06; rk.rv = 0;
+    rk.x = 0.99; rk.z = 0.22; rk.vx = rk.vz = 0;
+    rk.yaw = 0.07; rk.pitch = FLAT_PITCH; rk.pv = 0; rk.roll = 0.06; rk.rv = 0;
     rk.active = false; rk.fly = -1; rk.hs = 0;
   }
   rakeRest();

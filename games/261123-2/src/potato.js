@@ -97,15 +97,16 @@ export function create(G) {
         float n = clamp(n1 * 0.75 + n2 * 0.5 - 0.15, 0.0, 1.0);
         float up = smoothstep(-0.25, 0.8, vWN.y);
         float d = clamp(uDust * (0.18 + 0.82 * up) * (0.35 + 0.9 * n), 0.0, 1.0);
-        diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.47, 0.45, 0.42), smoothstep(0.1, 0.9, d) * 0.85);
+        diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.47, 0.45, 0.42), smoothstep(0.25, 0.95, d) * 0.6);
+        diffuseColor.rgb *= mix(0.38, 1.0, smoothstep(-0.55, 0.75, vWN.y)); // soft contact shading gives the body volume from above
       }`);
   const dustNoise = (G.util && G.util.noiseTex) || (() => {
     const d = new Uint8Array(64 * 64 * 4); for (let k = 0; k < d.length; k++) d[k] = Math.random() * 255;
     const t = new THREE.DataTexture(d, 64, 64); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.needsUpdate = true; return t;
   })();
   function makeRoastMat() {
-    const m = new THREE.MeshStandardMaterial({ map: roastTex, normalMap: roastN, roughness: 0.9, metalness: 0 });
-    m.color.setRGB(roastTex ? 0.56 : 0.2, roastTex ? 0.42 : 0.1, roastTex ? 0.40 : 0.08);
+    const m = new THREE.MeshStandardMaterial({ map: roastTex, normalMap: roastN, roughness: 0.72, metalness: 0 });
+    m.color.setRGB(roastTex ? 0.80 : 0.3, roastTex ? 0.70 : 0.14, roastTex ? 0.66 : 0.12);
     if (roastN) m.normalScale.set(1.1, 1.1);
     const u = { uDust: { value: 0 } };
     m.userData.u = u;
@@ -165,7 +166,7 @@ export function create(G) {
     const phi = r() * TAU;
     const bdir = new V3(0, Math.cos(phi), Math.sin(phi));
     const sag = L * bend / 8 * 4;
-    const kS = lerp(0.85, 1.15, r()), pH = lerp(0.5, 0.6, r()), pT = lerp(0.75, 0.95, r()), aH = lerp(2.0, 2.6, r()), aT = lerp(1.5, 1.9, r());
+    const kS = lerp(0.85, 1.15, r()), pH = lerp(0.5, 0.6, r()), pT = lerp(0.56, 0.72, r()), aH = lerp(2.7, 3.3, r()), aT = lerp(2.3, 2.9, r());
     const ell = lerp(0.05, 0.12, r()), ellA = r() * PI, gph = r() * TAU, gA = lerp(0.012, 0.03, r());
     const lumps = []; const nl = 2 + (r() < 0.6 ? 1 : 0);
     for (let k = 0; k < nl; k++) lumps.push({ t: lerp(0.18, 0.82, r()), th: r() * TAU, a: (r() < 0.5 ? -1 : 1) * lerp(0.05, 0.12, r()), wt: lerp(0.1, 0.22, r()), wa: lerp(0.6, 1.2, r()) });
@@ -636,7 +637,7 @@ export function create(G) {
     const trayY = Zc.y + 0.025;
     const w = pots.map((P) => 2 * P.S.Rmax + 0.014);
     const tot = w.reduce((a, b) => a + b, 0);
-    let z = Zc.z - tot / 2;
+    let z = Zc.z - 0.045 - tot / 2;
     pots.forEach((P, k) => {
       const zc = z + w[k] / 2; z += w[k];
       const yaw = (r() - 0.5) * 0.4, roll = r() * TAU;
@@ -660,7 +661,7 @@ export function create(G) {
   function ashPose(P, k, outP) {
     const sy = ashY(P.ax, P.az);
     const R = P.S.Rmax;
-    return outP.set(P.ax, sy + lerp(-1.6 * R - 0.02, 0.3 * R, clamp(k, 0, 1)), P.az);
+    return outP.set(P.ax, sy + lerp(-1.6 * R - 0.02, 0.7 * R, clamp(k, 0, 1)), P.az);
   }
   function trayY() { return anchor('zaru', -0.62, 0, 1.22, _zA).y + 0.025; }
 
@@ -679,8 +680,8 @@ export function create(G) {
     outQ.setFromAxisAngle(Y, psi).multiply(_tq.setFromAxisAngle(Zax, s * e)).multiply(qa);
     const stg = H.stages[st] || S0;
     const Zc = anchor('zaru', -0.62, 0, 1.22, _zA);
-    const cx = Zc.x + (P.i - 1) * 0.125, cz = Zc.z + 0.135 - Math.abs(P.i - 1) * 0.04;
-    outP.set(cx + (h === 0 ? -1 : 1) * (0.024 + P.S.R * 0.4), trayY() - lowestY(stg.verts, outQ), cz);
+    const cx = Zc.x, cz = Zc.z + 0.168; // one opened potato at a time: always front-centre of the tray
+    outP.set(cx + (h === 0 ? -1 : 1) * (0.032 + P.S.R * 0.5), trayY() - lowestY(stg.verts, outQ), cz);
     return outP;
   }
 

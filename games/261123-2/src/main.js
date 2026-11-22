@@ -443,6 +443,12 @@ async function boot() {
     let solvedShift = 0, shift = 0, fromShift = 0, toShift = 0, appliedShift = NaN, applied9 = NaN;
 
     function solve(s, outPos, outTgt) {
+      if (Array.isArray(s.pos) && Array.isArray(s.look)) { // explicit camera (e.g. looking up into the tree)
+        outPos.set(+s.pos[0] || 0, +s.pos[1] || 0, +s.pos[2] || 0);
+        outTgt.set(+s.look[0] || 0, +s.look[1] || 0, +s.look[2] || 0);
+        solvedShift = 0;
+        return clamp(+s.fov || 50, 15, 100);
+      }
       const t = s.target || [0, 0, 0];
       outTgt.set(+t[0] || 0, +t[1] || 0, +t[2] || 0);
       const fit = s.fit || { w: 2.5, d: 2.5 };
@@ -580,10 +586,10 @@ async function boot() {
     }
 
     // finger
-    const skin = new THREE.Color(0xe7b08f);
+    const skin = new THREE.Color(0xd79a78);
     const fmat = new THREE.MeshStandardMaterial({
       color: skin, roughness: 0.55, metalness: 0, transparent: true, opacity: 0,
-      depthTest: true, depthWrite: true, emissive: new THREE.Color(0x5a3022), fog: false,
+      depthTest: true, depthWrite: true, emissive: new THREE.Color(0x3a1c12), fog: false,
     });
     const nmat = new THREE.MeshStandardMaterial({
       color: new THREE.Color(0xf3d2c4), roughness: 0.25, metalness: 0, transparent: true, opacity: 0,
@@ -698,7 +704,7 @@ async function boot() {
       const a = fAlpha * Math.min(1, alpha + (fHide ? 1 : 0));
       // scale to ~10 % of screen height
       const dist = Math.max(0.2, camera.position.distanceTo(fp));
-      const sc = 0.085 * 2 * dist * Math.tan(camera.fov * Math.PI / 360) / LEN;
+      const sc = 0.058 * 2 * dist * Math.tan(camera.fov * Math.PI / 360) / LEN;
       // orientation: axis from tip toward the player's hand (toward camera, up ~50 deg), slight lean to the right
       toCam.copy(camera.position).sub(fp); toCam.y = 0;
       if (toCam.lengthSq() < 1e-6) toCam.set(0, 0, 1);
@@ -729,8 +735,8 @@ async function boot() {
           tg.getWorldPosition(hv); above = hv.y; y = 0;
         } else if (tg && tg.isVector3) { hv.copy(tg); y = tg.y; above = tg.y; }
         else hv.set(0, 0, 0);
-        const pulse = 0.78 + 0.22 * Math.sin((t * 1.2 + h.phase) * 6.2832);
-        const op = 0.35 * h.k * pulse;
+        const pulse = 0.66 + 0.34 * Math.sin((t * 1.2 + h.phase) * 6.2832);
+        const op = 0.5 * h.k * pulse;
         h.mesh.visible = op > 0.002;
         h.mesh.position.set(hv.x, y + 0.012, hv.z);
         const sz = h.radius * 2.6 * (0.97 + 0.03 * pulse);
@@ -741,7 +747,7 @@ async function boot() {
         if (showSpr) {
           h.spr.position.copy(hv);
           h.spr.scale.setScalar(h.radius * 2.2);
-          h.smat.opacity = op * 0.35;
+          h.smat.opacity = op * 0.18;
         }
       }
       updateFinger(dt, t);
@@ -854,8 +860,8 @@ async function boot() {
       if (firstFrame) { firstFrame = false; canvas.classList.add('on'); }
     }
   }
-  if (G.dev) {
-    // dev only: run n full update ticks without rendering (fast-forward slow headless runs)
+  if (G.dev || /[?&]step\b/.test(location.search)) {
+    // self-check helper (dev builds or ?step): run n full update ticks without rendering (fast-forward slow headless runs)
     G.devStep = (n = 1, sdt = 1 / 30) => {
       const dt = clamp(+sdt || 1 / 30, 0, 0.05);
       for (let k = 0; k < (n | 0); k++) {
